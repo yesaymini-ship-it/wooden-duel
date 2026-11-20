@@ -1,0 +1,456 @@
+:root {
+    --bg-color: #1a2219; /* 森林深綠色底 */
+    --panel-bg: rgba(46, 33, 21, 0.9); /* 溫暖的木質深褐色面板 */
+    --border-color: #6d4a2d; /* 實木邊框色 */
+    --border-highlight: #a87e56; /* 亮木色 */
+    
+    --wood-light: #e5cc9f; /* 淺色年輪肉 */
+    --wood-dark: #3a220f;  /* 樹皮深褐 */
+    --leaf-green: #3d8c31; /* 嫩綠葉片 */
+    
+    --team-red: #c94432;   /* 玩家一：軍隊紅 */
+    --team-blue: #3d7cb8;  /* 玩家二：軍隊藍 */
+    --accent-gold: #d4a73b; /* 復古金色 (選中/高亮) */
+    
+    --text-primary: #fbf6eb; /* 羊皮紙溫潤白文字 */
+    --text-muted: #af9c8d;   /* 沉穩木灰 */
+    
+    --shadow-soft: 0 10px 20px rgba(0, 0, 0, 0.55);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+}
+
+body {
+    background-color: var(--bg-color);
+    background-image: radial-gradient(circle, rgba(35, 55, 30, 0.4) 0%, rgba(12, 18, 10, 0.95) 100%);
+    color: var(--text-primary);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 18px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+/* 畫面螢幕管理器 */
+.screen {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    z-index: 10;
+}
+
+.screen.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* 標題與容器 */
+.wood-title-container {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+h1.wood-text {
+    font-family: 'Cinzel', serif;
+    font-size: 4.5rem;
+    font-weight: 900;
+    color: #fbf6eb;
+    text-shadow: 2px 2px 0px var(--wood-dark), 4px 4px 0px #1a0f06, 6px 6px 12px rgba(0,0,0,0.8);
+    letter-spacing: 6px;
+}
+
+h2.wood-winner-text {
+    font-family: 'Cinzel', serif;
+    font-size: 3.5rem;
+    font-weight: 900;
+    color: var(--accent-gold);
+    text-shadow: 2px 2px 0px var(--wood-dark), 4px 4px 10px rgba(0,0,0,0.8);
+    letter-spacing: 4px;
+}
+
+.subtitle, .winner-subtitle {
+    font-size: 1.1rem;
+    letter-spacing: 3px;
+    color: var(--wood-light);
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.winner-subtitle {
+    color: var(--text-muted);
+}
+
+/* 仿舊實木面板 */
+.panel {
+    background: var(--panel-bg);
+    border: 4px solid var(--border-color);
+    outline: 2px solid var(--border-highlight);
+    outline-offset: -6px;
+    box-shadow: var(--shadow-soft), inset 0 0 30px rgba(0, 0, 0, 0.6);
+    border-radius: 8px;
+    padding: 2.5rem;
+    width: 90%;
+    max-width: 520px;
+}
+
+.card h3 {
+    font-family: 'Cinzel', serif;
+    color: var(--accent-gold);
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    letter-spacing: 2px;
+    font-size: 1.5rem;
+}
+
+.card ul {
+    list-style: none;
+    text-align: left;
+    margin-bottom: 2rem;
+}
+
+.card li {
+    margin-bottom: 0.8rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.card li b {
+    color: var(--accent-gold);
+    margin-right: 5px;
+}
+
+kbd {
+    background: rgba(229, 204, 159, 0.15);
+    border: 1px solid var(--border-highlight);
+    color: var(--wood-light);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    margin: 0 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+}
+
+/* 實木雕刻按鈕 */
+.wood-btn {
+    width: 100%;
+    padding: 1rem 2rem;
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #fbf6eb;
+    background: linear-gradient(180deg, #815938, #53361e);
+    border: 3px solid #331e0f;
+    border-radius: 6px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 5px 0px #2a1608, 0 8px 15px rgba(0,0,0,0.5);
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+}
+
+.wood-btn:hover {
+    background: linear-gradient(180deg, #946945, #614127);
+    transform: translateY(-2px);
+    box-shadow: 0 7px 0px #2a1608, 0 10px 20px rgba(0,0,0,0.6);
+}
+
+.wood-btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 2px 0px #2a1608, 0 4px 6px rgba(0,0,0,0.5);
+}
+
+#restart-btn {
+    max-width: 250px;
+}
+
+/* --- 遊戲主畫面樣式 --- */
+#game-screen {
+    justify-content: center;
+    padding: 1.5rem;
+    box-sizing: border-box;
+    position: relative;
+}
+
+/* 上方 HUD */
+.hud-top {
+    position: absolute;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 1000px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 12;
+    pointer-events: none;
+}
+
+.player-panel {
+    background: transparent;
+    border: none;
+    padding: 1rem;
+    width: 250px;
+    border-radius: 0;
+    box-shadow: none;
+    transition: all 0.3s ease;
+    pointer-events: auto;
+    text-shadow: 1px 1px 3px rgba(0,0,0,1), -1px -1px 3px rgba(0,0,0,1);
+}
+
+.p1-panel {
+    border: none;
+}
+
+.p2-panel {
+    border: none;
+}
+
+.player-name {
+    font-family: 'Cinzel', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+}
+
+.p1-panel .player-name {
+    color: #ffa498;
+}
+
+.p2-panel .player-name {
+    color: #a2cfff;
+    text-align: right;
+}
+
+.hp-bar-container {
+    width: 100%;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.hp-bar {
+    height: 100%;
+    transition: width 0.3s ease-out;
+}
+
+.p1-panel .hp-bar {
+    background: linear-gradient(90deg, #8b1f14, var(--team-red));
+}
+
+.p2-panel .hp-bar {
+    background: linear-gradient(90deg, var(--team-blue), #2b5585);
+    float: right;
+}
+
+.player-stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.player-stats span span {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+/* 中央風向/回合 */
+.center-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    pointer-events: auto;
+}
+
+.turn-announcement {
+    font-family: 'Cinzel', serif;
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    margin-bottom: 0.4rem;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    text-transform: uppercase;
+}
+
+.turn-announcement.p1-turn {
+    color: var(--team-red);
+}
+
+.turn-announcement.p2-turn {
+    color: var(--team-blue);
+}
+
+.wind-indicator {
+    background: rgba(43, 31, 20, 0.95);
+    border: 2px solid var(--border-color);
+    padding: 6px 16px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.wind-label {
+    color: var(--text-muted);
+}
+
+.wind-arrow-box {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-gold);
+    font-weight: bold;
+}
+
+#wind-arrow {
+    display: inline-block;
+    transition: transform 0.3s ease;
+}
+
+#wind-value {
+    color: var(--accent-gold);
+    font-weight: 700;
+}
+
+/* 玩家面板啟用狀態 */
+.player-panel.active {
+    transform: scale(1.05);
+}
+
+/* 遊戲畫布 */
+.canvas-container {
+    position: relative;
+    border: 5px solid var(--border-color);
+    outline: 2px solid var(--border-highlight);
+    outline-offset: -7px;
+    box-shadow: var(--shadow-soft);
+    background: #0d120a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#gameCanvas {
+    display: block;
+    max-width: 100%;
+}
+
+/* 蓄力條覆蓋層 */
+.power-bar-wrapper {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(43, 31, 20, 0.95);
+    border: 3px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 20px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 320px;
+    box-shadow: var(--shadow-soft);
+    z-index: 15;
+}
+
+.power-label {
+    font-family: 'Cinzel', serif;
+    font-size: 0.85rem;
+    color: var(--accent-gold);
+    letter-spacing: 1px;
+}
+
+.power-bar-container {
+    width: 100%;
+    height: 14px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.power-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-gold), #e07216);
+    transition: width 0.05s linear;
+}
+
+/* 下方 HUD */
+.hud-bottom {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.control-help span {
+    margin-right: 15px;
+}
+
+.current-player-action {
+    color: var(--text-primary);
+}
+
+#fuel-value {
+    color: var(--accent-gold);
+    font-weight: 700;
+}
+
+.weapon-display {
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--accent-gold);
+    letter-spacing: 1px;
+    font-family: 'Cinzel', serif;
+}
+
+/* 顏色樣式複寫，對應 JavaScript 更新 */
+.neon-text-cyan {
+    color: #ffa498 !important;
+}
+.neon-text-magenta {
+    color: #a2cfff !important;
+}
+.neon-text-yellow {
+    color: var(--accent-gold) !important;
+}
