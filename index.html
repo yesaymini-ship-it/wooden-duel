@@ -181,7 +181,6 @@
             </div>
             <button id="online-leave-btn" class="wood-btn auth-btn small-btn" type="button" style="display: none;">離開房間</button>
             <button id="sound-toggle-btn" class="wood-btn auth-btn small-btn" type="button">🔊 音效開</button>
-            <button id="chat-toggle-btn" class="wood-btn auth-btn small-btn" type="button" style="display: none;">💬 留言</button>
         </div>
 
         <!-- 手機觸控按鈕（觸控裝置才顯示，桌機隱藏） -->
@@ -202,11 +201,17 @@
             <button id="touch-fire" class="touch-btn touch-fire" type="button">發射</button>
         </div>
 
-        <!-- 線上對戰留言板（只有線上對戰才顯示） -->
-        <div id="chat-panel" class="chat-panel" style="display: none;">
-            <div class="chat-header"><span>💬 留言板</span><button id="chat-close-btn" class="chat-close-btn" type="button" aria-label="關閉留言板">✕</button></div>
-            <div id="chat-list" class="chat-list"></div>
-            <div class="chat-input-row">
+        <!-- 線上對戰留言列（遊戲下方一行，正常排版不浮層：顯示最新一則，左右滑動看舊留言） -->
+        <div id="chat-strip" class="chat-strip" style="display: none;">
+            <div class="chat-strip-row">
+                <div id="chat-strip-view" class="chat-strip-view" tabindex="0" role="button" aria-label="留言列：點一下寫留言，左右滑動看舊留言">
+                    <span id="chat-strip-new-dot" class="chat-strip-new-dot" style="display: none;">● 新留言</span>
+                    <span id="chat-strip-text" class="chat-strip-text chat-strip-empty">💬 還沒有留言，點一下開始聊</span>
+                    <span id="chat-strip-pos" class="chat-strip-pos"></span>
+                </div>
+                <button id="chat-strip-compose-btn" class="wood-btn auth-btn small-btn" type="button" aria-label="寫留言">✎</button>
+            </div>
+            <div id="chat-strip-input-row" class="chat-input-row" style="display: none;">
                 <input id="chat-input" class="chat-input" type="text" maxlength="200" placeholder="輸入留言…" autocomplete="off">
                 <button id="chat-send-btn" class="wood-btn auth-btn small-btn" type="button">送出</button>
             </div>
