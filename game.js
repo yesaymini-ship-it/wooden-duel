@@ -1164,6 +1164,8 @@ function gameLoop() {
     updateCharging();
     // 線上模式：推進對方開火的重播動畫
     if (window.WDOnline && typeof window.WDOnline.tickReplay === 'function') window.WDOnline.tickReplay();
+    // 線上模式：輪到自己回合時，把移動／角度／武器變化即時同步給對方
+    if (window.WDOnline && typeof window.WDOnline.maybeSendPose === 'function') window.WDOnline.maybeSendPose();
     render();
     requestAnimationFrame(gameLoop);
 }

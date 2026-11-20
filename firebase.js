@@ -289,6 +289,15 @@ async function sendShot(code, shot) {
   });
 }
 
+// 回合內的即時姿態（移動／角度／武器）：只寫 poses.<slot>，不碰 state／rev，
+// 所以不會干擾權威狀態的套用邏輯；對方收到後即時套用，不用等開火
+async function sendPose(code, slot, pose) {
+  const ref = doc(db, "rooms", code);
+  const patch = { updatedAt: serverTimestamp() };
+  patch["poses." + slot] = pose;
+  await updateDoc(ref, patch);
+}
+
 // 回合結束後的權威結果狀態（rev 由呼叫方遞增）
 async function sendState(code, state, rev) {
   const ref = doc(db, "rooms", code);
@@ -365,6 +374,7 @@ window.WD = {
   rejoinRoom,
   subscribeRoom,
   sendShot,
+  sendPose,
   sendState,
   finishRoom,
   rematchRoom,

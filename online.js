@@ -38,6 +38,12 @@ let onlineReplay = null; // { points, idx, elapsed, landing, weaponType, shotId 
 let onlineReplayLastTick = 0;
 let onlineLastReplayedShotId = null;
 let onlineOpponentLeftShown = false;
+let onlinePoseSeq = 0; // 本機發出的姿態序號（每發一次 +1）
+let onlineLastSentPose = null; // 上次發出的姿態（不含 seq/at）
+let onlineLastPoseSentAt = 0; // 上次發出的時間（Date.now）
+let onlinePoseTrailingTimer = null; // 收尾發送的計時器
+let onlineAppliedPose = { p1: { seq: 0, at: 0 }, p2: { seq: 0, at: 0 } }; // 對方姿態已套用的最新序號／時間
+const ONLINE_POSE_THROTTLE_MS = 150; // 姿態寫入節流：最多每 150ms 寫一次
 
 function onlineMySlotNum() { return onlineMySlot === "p2" ? 2 : 1; }
 function onlineOtherSlot() { return onlineMySlot === "p1" ? "p2" : "p1"; }
@@ -186,6 +192,101 @@ function onlineApplyCannon(c, s) {
   c.useDouble = s.useDouble;
   c.isFalling = !!s.isFalling;
   c.fallSpeed = 0;
+}
+
+// ---------- 回合內即時姿態同步：移動／角度／武器 ----------
+// 回合內移動只改本機砲台物件，不會寫進房間，所以對方看不到；
+// 這裡每幀檢查自己的砲台姿態，變了就節流寫入 rooms.poses.<slot>，對方即時套用。
+// 注意：姿態寫入不碰 state／rev，開火後的權威結果同步保持原樣。
+function onlineBuildPose(c) {
+  return {
+    x: Math.round(c.x * 10) / 10,
+    angle: Math.round(c.angle),
+    weapon: c.selectedWeapon,
+    fuel: Math.round(c.fuel),
+    useDouble: !!c.useDouble,
+  };
+}
+
+function onlinePoseChanged(a, b) {
+  if (!a || !b) return true;
+  return a.x !== b.x || a.angle !== b.angle || a.weapon !== b.weapon ||
+    a.fuel !== b.fuel || a.useDouble !== b.useDouble;
+}
+
+// 每幀由 game.js 的 gameLoop 呼叫：輪到自己回合時，把姿態變化節流寫進房間
+function onlineMaybeSendPose() {
+  if (gameMode !== "ONLINE" || !onlineRoomCode || !onlineMySlot) return;
+  if (!onlineIsMyTurn() || onlineIsReplayActive()) return;
+  if (gameState !== STATES.PLAYING && gameState !== STATES.CHARGING) return;
+  const me = onlineMySlot === "p2" ? player2 : player1;
+  if (!me || me.isFalling) return;
+  const pose = onlineBuildPose(me);
+  if (!onlinePoseChanged(pose, onlineLastSentPose)) return;
+  const now = Date.now();
+  const weaponChanged = onlineLastSentPose &&
+    (pose.weapon !== onlineLastSentPose.weapon || pose.useDouble !== onlineLastSentPose.useDouble);
+  if (!weaponChanged && now - onlineLastPoseSentAt < ONLINE_POSE_THROTTLE_MS) {
+    onlineSchedulePoseFlush(now - onlineLastPoseSentAt);
+    return;
+  }
+  onlineSendPoseNow(pose, now);
+}
+
+function onlineSendPoseNow(pose, now) {
+  onlinePoseSeq++;
+  onlineLastSentPose = pose;
+  onlineLastPoseSentAt = now;
+  const WD = onlineGetWD();
+  if (WD && typeof WD.sendPose === "function") {
+    WD.sendPose(onlineRoomCode, onlineMySlot, Object.assign({}, pose, { seq: onlinePoseSeq, at: now })).catch(function (err) {
+      console.error("[WDOnline] 姿態同步失敗", err);
+    });
+  }
+}
+
+function onlineSchedulePoseFlush(elapsed) {
+  if (onlinePoseTrailingTimer) return;
+  const delay = Math.max(0, ONLINE_POSE_THROTTLE_MS - elapsed);
+  onlinePoseTrailingTimer = setTimeout(function () {
+    onlinePoseTrailingTimer = null;
+    onlineFlushPose();
+  }, delay);
+}
+
+// 收尾發送：移動停下來後，把最後一個姿態補送出去，避免對方永遠停在舊位置
+function onlineFlushPose() {
+  if (gameMode !== "ONLINE" || !onlineRoomCode || !onlineMySlot) return;
+  if (!onlineIsMyTurn() || onlineIsReplayActive()) return;
+  if (gameState !== STATES.PLAYING && gameState !== STATES.CHARGING) return;
+  const me = onlineMySlot === "p2" ? player2 : player1;
+  if (!me || me.isFalling) return;
+  const pose = onlineBuildPose(me);
+  if (!onlinePoseChanged(pose, onlineLastSentPose)) return;
+  const now = Date.now();
+  if (now - onlineLastPoseSentAt < ONLINE_POSE_THROTTLE_MS) {
+    onlineSchedulePoseFlush(now - onlineLastPoseSentAt);
+    return;
+  }
+  onlineSendPoseNow(pose, now);
+}
+
+// 對方姿態來了：只套用對方砲台的位置／角度／武器（不動 HP、勝負、回合）
+function onlineApplyOpponentPose(slot, pose) {
+  if (!pose || typeof pose.x !== "number") return;
+  if (onlineReplay || onlineReplayQueue.length > 0) return; // 重播中不套用，等權威狀態
+  const applied = onlineAppliedPose[slot] || { seq: 0, at: 0 };
+  if (!(pose.seq > applied.seq || pose.at > applied.at)) return; // 過期快照不套用
+  onlineAppliedPose[slot] = { seq: pose.seq || 0, at: pose.at || 0 };
+  const c = slot === "p2" ? player2 : player1;
+  if (!c || c.isFalling) return; // 墜落中不套用，等權威狀態
+  c.x = pose.x;
+  c.angle = pose.angle;
+  c.selectedWeapon = pose.weapon;
+  c.fuel = pose.fuel;
+  c.useDouble = !!pose.useDouble;
+  // y 會由 updatePhysics 每幀依地形自動跟著 x 走，不用另外同步
+  updateHUD();
 }
 
 // 把房間的權威狀態套用到本地遊戲物件
@@ -411,6 +512,11 @@ function onlineOnRoomSnapshot(data) {
 
   if (data.status === "playing") {
     onlineSawPlaying = true;
+    // 對方回合內的即時姿態（移動／角度／武器）
+    if (data.poses) {
+      const other = onlineOtherSlot();
+      if (data.poses[other]) onlineApplyOpponentPose(other, data.poses[other]);
+    }
     // 對方的新開火：排進重播佇列
     if (data.lastShot && data.lastShot.by !== onlineMySlot && data.lastShot.shotId !== onlineLastReplayedShotId) {
       onlineLastReplayedShotId = data.lastShot.shotId;
@@ -538,6 +644,11 @@ function onlineResetFlags() {
   onlineReplayLastTick = 0;
   onlineLastReplayedShotId = null;
   onlineOpponentLeftShown = false;
+  onlinePoseSeq = 0;
+  onlineLastSentPose = null;
+  onlineLastPoseSentAt = 0;
+  if (onlinePoseTrailingTimer) { clearTimeout(onlinePoseTrailingTimer); onlinePoseTrailingTimer = null; }
+  onlineAppliedPose = { p1: { seq: 0, at: 0 }, p2: { seq: 0, at: 0 } };
 }
 
 function onlineCreateRoomFlow() {
@@ -893,6 +1004,7 @@ window.WDOnline = {
   onLocalGameOver: onlineOnLocalGameOver,
   tickReplay: onlineTickReplay,
   drawReplay: onlineDrawReplay,
+  maybeSendPose: onlineMaybeSendPose,
   computeTrajectory: onlineComputeTrajectory,
   openOnlinePanel: onlineOpenOnlinePanel,
 };
