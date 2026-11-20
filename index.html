@@ -19,6 +19,9 @@
             <p class="subtitle">獨木橋上的大砲對決 // RUSTIC ARTILLERY ARENA</p>
         </div>
 
+        <!-- 收到的對戰邀請（有人邀請你時跳出卡片） -->
+        <div id="online-invite-cards" class="invite-cards" style="display: none;"></div>
+
         <div class="card panel">
             <h3>遊戲玩法說明</h3>
             <ul>
@@ -91,6 +94,18 @@
                 <ul id="online-players-list" class="online-players-list"></ul>
                 <p id="online-waiting-status" class="online-waiting-status">等待對方加入…</p>
                 <button id="online-cancel-btn" class="wood-btn auth-btn">取消</button>
+            </div>
+        </div>
+
+        <!-- 線上玩家：登入後可看到誰在線上、邀請對戰 -->
+        <div id="presence-panel" class="card panel presence-panel">
+            <h3>線上玩家</h3>
+            <p id="presence-login-note" class="auth-note">登入後可看到線上玩家、邀請對戰。</p>
+            <p id="presence-empty" class="presence-empty" style="display: none;">目前沒有其他人在線上。</p>
+            <ul id="presence-players-list" class="presence-list"></ul>
+            <div id="online-invite-waiting" class="invite-waiting" style="display: none;">
+                <p id="online-invite-waiting-text" class="invite-waiting-text"></p>
+                <button id="online-invite-cancel-btn" class="wood-btn auth-btn" type="button">取消邀請</button>
             </div>
         </div>
     </div>
@@ -200,6 +215,7 @@
 
     <script src="game.js"></script>
     <script src="online.js"></script>
+    <script src="presence.js"></script>
     <script type="module" src="firebase.js"></script>
 </body>
 </html>

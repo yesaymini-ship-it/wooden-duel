@@ -13,6 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 import {
   getFirestore,
+  addDoc,
   doc,
   setDoc,
   getDoc,
@@ -22,6 +23,7 @@ import {
   serverTimestamp,
   collection,
   query,
+  where,
   orderBy,
   limit,
   getDocs,
@@ -83,6 +85,11 @@ async function loginWithGoogle() {
 }
 
 async function logout() {
+  // 先清掉在線狀態（登出後就沒權限寫了，所以要在登出前清；
+  // 清不掉也沒關係，列表只顯示 lastSeen 在 60 秒內的人）
+  try {
+    await removePresence();
+  } catch (err) {}
   try {
     await signOut(auth);
   } catch (err) {
@@ -347,6 +354,128 @@ async function heartbeatRoom(code, slot) {
   }
 }
 
+// --- 在線狀態（presence）：登入後讓別人看到我在線上 ---
+// Collection「presence」，文件 id 用 uid；lastSeen 是 serverTimestamp，
+// 列表只顯示 lastSeen 在 60 秒內的玩家（心跳每 20 秒更新一次）。
+// inGame：true 表示正在房間裡對戰（或等對方加入），別人就不能邀請。
+async function setPresenceOnline() {
+  if (!currentUser) return;
+  try {
+    await setDoc(doc(db, "presence", currentUser.uid), {
+      displayName: currentUser.displayName || "玩家",
+      photoURL: currentUser.photoURL || "",
+      lastSeen: serverTimestamp(),
+      inGame: false,
+    }, { merge: true });
+  } catch (err) {
+    console.error("[WD] 上線寫入失敗", err);
+  }
+}
+
+async function updatePresenceHeartbeat() {
+  if (!currentUser) return;
+  try {
+    await updateDoc(doc(db, "presence", currentUser.uid), { lastSeen: serverTimestamp() });
+  } catch (err) {
+    // 心跳失敗不影響遊戲，60 秒後會被當離線
+  }
+}
+
+async function setPresenceInGame(inGame) {
+  if (!currentUser) return;
+  try {
+    await updateDoc(doc(db, "presence", currentUser.uid), { inGame: !!inGame, lastSeen: serverTimestamp() });
+  } catch (err) {
+    console.error("[WD] 在線狀態更新失敗", err);
+  }
+}
+
+async function removePresence() {
+  if (!currentUser) return;
+  try {
+    await deleteDoc(doc(db, "presence", currentUser.uid));
+  } catch (err) {
+    // 刪不掉也沒關係，60 秒後會被當離線
+  }
+}
+
+// 即時監聽全部在線文件；呼叫方自己過濾 lastSeen（60 秒內才算在線）
+function subscribePresence(onUpdate) {
+  return onSnapshot(query(collection(db, "presence")), (snap) => {
+    const list = [];
+    snap.forEach((d) => {
+      const data = d.data() || {};
+      list.push(Object.assign({ uid: d.id }, data));
+    });
+    onUpdate(list);
+  }, (err) => {
+    console.error("[WD] 線上玩家監聽失敗", err);
+  });
+}
+
+// --- 邀請對戰 ---
+// Collection「invites」：fromUid / fromName / fromPhoto / toUid / roomCode /
+// status（pending / accepted / declined / cancelled / expired）/ createdAt。
+// 流程：邀請人先建立房間（自己是 p1、waiting），再新增一筆 pending 邀請；
+// 被邀請人接受後加入那間房（p2），雙方開局；拒絕／取消／60 秒逾時都會刪房間。
+async function sendInvite(toUid, roomCode) {
+  if (!currentUser) throw new Error("NEED_LOGIN");
+  const ref = await addDoc(collection(db, "invites"), {
+    fromUid: currentUser.uid,
+    fromName: currentUser.displayName || "玩家",
+    fromPhoto: currentUser.photoURL || "",
+    toUid,
+    roomCode,
+    status: "pending",
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// 監聽寄給我的待回覆邀請（toUid 是我、status 是 pending），用 docChanges 回傳變化
+function subscribeInvitesToMe(uid, onUpdate) {
+  const q = query(
+    collection(db, "invites"),
+    where("toUid", "==", uid),
+    where("status", "==", "pending")
+  );
+  return onSnapshot(q, (snap) => {
+    const changes = snap.docChanges().map((c) => ({ type: c.type, id: c.doc.id, data: c.doc.data() || {} }));
+    onUpdate(changes);
+  }, (err) => {
+    console.error("[WD] 邀請監聽失敗", err);
+  });
+}
+
+// 監聽單筆邀請的狀態變化（邀請人等對方接受／拒絕用）
+function subscribeInvite(inviteId, onUpdate) {
+  return onSnapshot(doc(db, "invites", inviteId), (snap) => {
+    onUpdate(snap.exists() ? snap.data() : null);
+  }, (err) => {
+    console.error("[WD] 邀請監聽失敗", err);
+  });
+}
+
+async function getInvite(inviteId) {
+  const snap = await getDoc(doc(db, "invites", inviteId));
+  return snap.exists() ? snap.data() : null;
+}
+
+// 回覆邀請：接受（accepted）或拒絕（declined）
+async function respondInvite(inviteId, accept) {
+  await updateDoc(doc(db, "invites", inviteId), { status: accept ? "accepted" : "declined" });
+}
+
+// 邀請人取消邀請
+async function cancelInvite(inviteId) {
+  await updateDoc(doc(db, "invites", inviteId), { status: "cancelled" });
+}
+
+// 邀請 60 秒沒回應就過期
+async function expireInvite(inviteId) {
+  await updateDoc(doc(db, "invites", inviteId), { status: "expired" });
+}
+
 // --- 綁定按鈕與監聽登入狀態（onAuthStateChanged 載入時就會觸發一次） ---
 const loginBtn = $("google-login-btn");
 if (loginBtn) loginBtn.addEventListener("click", loginWithGoogle);
@@ -357,6 +486,10 @@ onAuthStateChanged(auth, (user) => {
   currentUser = user;
   renderAuthArea();
   loadLeaderboard(); // 登入狀態改變後刷新排行榜（自己的那一行會標示出來）
+  // 通知 presence.js（線上玩家列表＋邀請）：登入就上線、登出就下線
+  if (typeof window !== "undefined" && window.WDPresence && typeof window.WDPresence.onAuthChanged === "function") {
+    window.WDPresence.onAuthChanged(user);
+  }
 });
 
 // 暴露給 game.js（傳統 script）呼叫的介面
@@ -380,4 +513,17 @@ window.WD = {
   rematchRoom,
   leaveRoom,
   heartbeatRoom,
+  // 在線狀態（presence）與邀請對戰
+  setPresenceOnline,
+  updatePresenceHeartbeat,
+  setPresenceInGame,
+  removePresence,
+  subscribePresence,
+  sendInvite,
+  subscribeInvitesToMe,
+  subscribeInvite,
+  getInvite,
+  respondInvite,
+  cancelInvite,
+  expireInvite,
 };
