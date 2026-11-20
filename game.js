@@ -42,6 +42,7 @@ let canvas, ctx;
 let offCanvas, offCtx; // 離屏畫布與快取上下文（優化記憶體，防止 FPS 驟降）
 let gameState = STATES.START;
 let currentPlayer = 1; // 1 或 2
+let lastGameWinner = 0; // 上一場的贏家：0 未定／平手、1 玩家 1、2 玩家 2（2P 再來一場輸家先攻用）
 let gameMode = 'PVP';  // 'PVP' 或 'PVE'
 let isAutoAiming = false; // 是否正在執行自動瞄準動畫與發射
 let autoAimTarget = null; // 自動瞄準的目標位置物件 { x, y }
@@ -84,6 +85,65 @@ let projectile = null;
 let pendingShots = 0;
 let lastChargePower = 0;
 let explosions = [];
+
+// --- 換回合提示音（Web Audio API 直接產生音調，不用音檔） ---
+let turnSoundCtx = null; // AudioContext，第一次使用者操作時建立／resume
+let turnSoundMuted = false; // 靜音開關（預設開啟）
+let turnSoundPlayCount = 0; // 實際播了幾次提示音（測試用）
+try {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("wd-turn-sound") === "off") turnSoundMuted = true;
+} catch (e) {}
+
+// 瀏覽器要使用者先點過畫面才准出聲：第一次操作時建立 AudioContext 並 resume
+function turnSoundUnlock() {
+    try {
+        if (!turnSoundCtx) {
+            const AC = (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext)) || null;
+            if (!AC) return;
+            turnSoundCtx = new AC();
+        }
+        if (turnSoundCtx.state === "suspended" && typeof turnSoundCtx.resume === "function") turnSoundCtx.resume();
+    } catch (e) {}
+}
+
+// 換到自己回合時的提示音：880Hz → 1320Hz，各 0.12 秒
+function playTurnSound() {
+    if (turnSoundMuted) return;
+    try {
+        turnSoundUnlock();
+        if (!turnSoundCtx) return;
+        const ctx = turnSoundCtx;
+        const now = ctx.currentTime || 0;
+        [880, 1320].forEach(function (freq, i) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.value = freq;
+            const t0 = now + i * 0.12;
+            gain.gain.setValueAtTime(0.0001, t0);
+            gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t0);
+            osc.stop(t0 + 0.13);
+        });
+        turnSoundPlayCount++;
+    } catch (e) {}
+}
+
+// 靜音開關：更新按鈕文字並記住選擇
+function turnSoundUpdateButton() {
+    const btn = document.getElementById("sound-toggle-btn");
+    if (btn) btn.innerText = turnSoundMuted ? "🔇 音效關" : "🔊 音效開";
+}
+function turnSoundSetMuted(muted) {
+    turnSoundMuted = !!muted;
+    try {
+        if (typeof localStorage !== "undefined") localStorage.setItem("wd-turn-sound", turnSoundMuted ? "off" : "on");
+    } catch (e) {}
+    turnSoundUpdateButton();
+}
 
 // 玩家大砲類別
 class Cannon {
@@ -347,14 +407,6 @@ window.onload = function() {
         resetGame();
     });
 
-    const autoAimBtn = document.getElementById('auto-aim-btn');
-    if (autoAimBtn) {
-        autoAimBtn.addEventListener('click', function(e) {
-            e.target.blur();
-            triggerAutoAim();
-        });
-    }
-
     // --- 觸控按鈕（手機） ---
     // 按住型：按住操作、放開停止；直接操作 keys 狀態，與按住鍵盤完全一樣
     function bindHoldButton(id, onPress, onRelease) {
@@ -394,6 +446,18 @@ window.onload = function() {
     bindTapButton('touch-w1', function() { selectWeapon(1); });
     bindTapButton('touch-w2', function() { selectWeapon(2); });
     bindTapButton('touch-w3', function() { selectWeapon(3); });
+
+    // 換回合提示音：瀏覽器要先有使用者操作才准出聲，第一次點按／按鍵時建立 AudioContext
+    window.addEventListener('pointerdown', turnSoundUnlock);
+    window.addEventListener('keydown', turnSoundUnlock);
+    const soundToggleBtn = document.getElementById('sound-toggle-btn');
+    if (soundToggleBtn) {
+        soundToggleBtn.addEventListener('click', function(e) {
+            e.target.blur();
+            turnSoundSetMuted(!turnSoundMuted);
+        });
+        turnSoundUpdateButton();
+    }
 
     // 鍵盤事件監聽
     window.addEventListener('keydown', handleKeyDown);
@@ -444,12 +508,15 @@ function resetGame() {
     player2.isFalling = false;
     player2.fallSpeed = 0;
 
-    currentPlayer = 1;
+    // 雙人本地對戰（2P）再來一局：上一場輸的人先攻；平手或未定由玩家 1 先攻。
+    // VS AI 不改：永遠玩家 1（人類）先攻。
+    if (gameMode === 'PVP' && lastGameWinner === 1) currentPlayer = 2;
+    else currentPlayer = 1;
     projectile = null;
     particles = [];
     explosions = [];
     gameState = STATES.PLAYING;
-    
+
     const p2Name = document.querySelector('.p2-panel .player-name');
     if (p2Name) {
         p2Name.innerText = gameMode === 'PVE' ? '智慧電腦 [VS AI]' : '軍隊 02 [右方]';
@@ -1017,6 +1084,11 @@ function startTurnSwitch() {
         if (currentPlayer === 2 && gameMode === 'PVE') {
             runAITurn();
         }
+
+        // 換到人類玩家回合時播提示音（PVE 只有玩家 1 是人、2P 兩邊都是人）
+        if ((gameMode === 'PVE' && currentPlayer === 1) || gameMode === 'PVP') {
+            playTurnSound();
+        }
     }, 800);
 }
 
@@ -1043,6 +1115,11 @@ function showGameOver(winnerText) {
     const textEl = document.getElementById('winner-text');
     textEl.innerText = winnerText;
     textEl.setAttribute('data-text', winnerText);
+
+    // 記下上一場贏家（2P 再來一場輸家先攻用；VS AI 不用、線上用房間的 winner）
+    if (winnerText === "PLAYER 1 獲勝") lastGameWinner = 1;
+    else if (winnerText === "PLAYER 2 獲勝") lastGameWinner = 2;
+    else lastGameWinner = 0;
 
     // 線上模式：勝負與記分由房間狀態統一處理（快照收到 finished 才記分，避免重複）。
     if (gameMode === 'ONLINE') {

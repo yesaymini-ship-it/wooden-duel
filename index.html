@@ -175,12 +175,13 @@
                 <span>[W][S] 角度</span>
                 <span>[1]/[2]/[3] 切換砲彈</span>
                 <span>[空白鍵] 蓄力發射</span>
-                <span style="color: #ffb74d; font-weight: bold;">[H] 自動瞄準(必中)</span>
             </div>
             <div class="current-player-action">
                 當前移動限制 (行動力): <span id="fuel-value">100</span>%
             </div>
             <button id="online-leave-btn" class="wood-btn auth-btn small-btn" type="button" style="display: none;">離開房間</button>
+            <button id="sound-toggle-btn" class="wood-btn auth-btn small-btn" type="button">🔊 音效開</button>
+            <button id="chat-toggle-btn" class="wood-btn auth-btn small-btn" type="button" style="display: none;">💬 留言</button>
         </div>
 
         <!-- 手機觸控按鈕（觸控裝置才顯示，桌機隱藏） -->
@@ -198,8 +199,17 @@
                 <button id="touch-w2" class="touch-btn touch-weapon" type="button" aria-label="大裂地彈">2</button>
                 <button id="touch-w3" class="touch-btn touch-weapon" type="button" aria-label="連發雙彈">3</button>
             </div>
-            <button id="auto-aim-btn" class="wood-btn touch-aim" type="button">自動瞄準 (H)</button>
             <button id="touch-fire" class="touch-btn touch-fire" type="button">發射</button>
+        </div>
+
+        <!-- 線上對戰留言板（只有線上對戰才顯示） -->
+        <div id="chat-panel" class="chat-panel" style="display: none;">
+            <div class="chat-header"><span>💬 留言板</span><button id="chat-close-btn" class="chat-close-btn" type="button" aria-label="關閉留言板">✕</button></div>
+            <div id="chat-list" class="chat-list"></div>
+            <div class="chat-input-row">
+                <input id="chat-input" class="chat-input" type="text" maxlength="200" placeholder="輸入留言…" autocomplete="off">
+                <button id="chat-send-btn" class="wood-btn auth-btn small-btn" type="button">送出</button>
+            </div>
         </div>
     </div>
 
@@ -216,6 +226,7 @@
 
     <script src="game.js"></script>
     <script src="online.js"></script>
+    <script src="chat.js"></script>
     <script src="presence.js"></script>
     <script type="module" src="firebase.js"></script>
 </body>

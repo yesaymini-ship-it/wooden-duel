@@ -333,11 +333,61 @@ async function leaveRoom(code, slot) {
     const other = slot === "p1" ? "p2" : "p1";
     if (data.leftBy === other || (slot === "p1" && !data.players.p2)) {
       await deleteDoc(ref);
+      await deleteChatMessages(code); // 房間刪除時留言跟著清掉（朋友對戰，不用留存）
       return;
     }
     await updateDoc(ref, { leftBy: slot, updatedAt: serverTimestamp() });
   } catch (err) {
     console.error("[WD] 離開房間寫入失敗", err);
+  }
+}
+
+// --- 線上對戰留言板（文字聊天） ---
+// 頂層 collection「chatMessages」，每則有 roomCode／uid／displayName／text／createdAt。
+// 用頂層 collection 而不用 rooms 子集合：跟 presence／invites 一樣走同一套規則，
+// 而且查詢只用 roomCode 一個等值條件，不需要複合索引（排序在客戶端做）。
+const CHAT_MAX_LEN = 200; // 單則最多 200 字
+const CHAT_LIMIT = 50; // 只顯示最近 50 則
+
+async function sendChatMessage(code, text) {
+  if (!currentUser) throw new Error("NEED_LOGIN");
+  text = String(text || "").trim().slice(0, CHAT_MAX_LEN);
+  if (!text) return null;
+  const ref = await addDoc(collection(db, "chatMessages"), {
+    roomCode: code,
+    uid: currentUser.uid,
+    displayName: currentUser.displayName || "玩家",
+    text,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// 即時監聽這個房間的留言：按時間排序、只取最近 50 則
+function subscribeChatMessages(code, onUpdate) {
+  const q = query(collection(db, "chatMessages"), where("roomCode", "==", code));
+  return onSnapshot(q, (snap) => {
+    const list = snap.docs.map((d) => Object.assign({ id: d.id }, d.data() || {}));
+    list.sort((a, b) => {
+      const ta = a.createdAt && typeof a.createdAt.toMillis === "function" ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt && typeof b.createdAt.toMillis === "function" ? b.createdAt.toMillis() : 0;
+      return ta - tb;
+    });
+    onUpdate(list.slice(-CHAT_LIMIT));
+  }, (err) => {
+    console.error("[WD] 留言監聽失敗", err);
+  });
+}
+
+// 房間刪除時把這個房間的留言一起清掉（朋友對戰，不用留存）
+async function deleteChatMessages(code) {
+  try {
+    const snap = await getDocs(query(collection(db, "chatMessages"), where("roomCode", "==", code), limit(100)));
+    const jobs = [];
+    snap.forEach((d) => { jobs.push(deleteDoc(d.ref)); });
+    await Promise.all(jobs);
+  } catch (err) {
+    console.error("[WD] 刪除留言失敗", err);
   }
 }
 
@@ -526,6 +576,10 @@ window.WD = {
   rematchRoom,
   leaveRoom,
   heartbeatRoom,
+  // 線上對戰留言板
+  sendChatMessage,
+  subscribeChatMessages,
+  deleteChatMessages,
   // 在線狀態（presence）與邀請對戰
   setPresenceOnline,
   updatePresenceHeartbeat,

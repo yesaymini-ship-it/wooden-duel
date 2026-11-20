@@ -577,6 +577,10 @@ function onlineApplyPendingState() {
   if (st.status === "finished") {
     onlineShowOnlineGameOver(st.winner);
   } else {
+    // 輪到自己了就播提示音（對方開完火換到我、剛開局輪到我、再來一場由我先攻，都算）
+    if (currentPlayer === onlineMySlotNum() && typeof playTurnSound === "function") {
+      playTurnSound();
+    }
     // 回到遊戲畫面（再來一場時從結算畫面回來）
     onlineStartOnlineGameScreen();
     onlineShowEl(onlineEl("online-rematch-btn"), false);
@@ -605,6 +609,10 @@ function onlineStartOnlineGameScreen() {
   gameMode = "ONLINE";
   switchScreen("game-screen");
   onlineShowEl(onlineEl("online-leave-btn"), true);
+  // 線上留言板：進房間的遊戲畫面就訂閱留言、顯示留言按鈕
+  if (typeof window !== "undefined" && window.WDChat && typeof window.WDChat.enterRoom === "function") {
+    window.WDChat.enterRoom(onlineRoomCode);
+  }
   const banner = onlineEl("online-left-banner");
   if (banner) banner.style.display = "none";
 }
@@ -799,7 +807,7 @@ function onlineFallbackCopy() {
   } catch (e) {}
 }
 
-// 再來一場：重置成新一局（雙方都要在房間裡才有效）
+// 再來一場：重置成新一局（雙方都要在房間裡才有效），輸的人先攻
 function onlineRequestRematch() {
   const WD = onlineGetWD();
   if (!WD || !onlineRoomCode || !onlineRoomData) return;
@@ -807,7 +815,11 @@ function onlineRequestRematch() {
     alert("對方已經離開了，沒辦法再來一場。");
     return;
   }
+  if (onlineRoomData.status !== "finished") return; // 已經有人按過再來一場了
   const newState = WD.initialRoomState();
+  // 輸的人先攻：贏家從房間文件（共用的 winner）算，兩邊一定一致；平手維持 p1 先攻
+  if (onlineRoomData.winner === "p1") newState.turn = "p2";
+  else if (onlineRoomData.winner === "p2") newState.turn = "p1";
   const newRev = (onlineRoomData.rev || 0) + 1;
   WD.rematchRoom(onlineRoomCode, newState, newRev).catch(function (err) {
     console.error("[WDOnline] 再來一場失敗", err);
@@ -878,6 +890,10 @@ function onlineCleanupLocal() {
   onlineShowEl(onlineEl("online-rematch-btn"), false);
   onlineShowEl(onlineEl("online-back-btn"), false);
   onlineShowEl(onlineEl("restart-btn"), true);
+  // 線上留言板：離開房間就取消訂閱、清空留言、收起按鈕
+  if (typeof window !== "undefined" && window.WDChat && typeof window.WDChat.leaveRoom === "function") {
+    window.WDChat.leaveRoom();
+  }
   switchScreen("start-screen");
 }
 
