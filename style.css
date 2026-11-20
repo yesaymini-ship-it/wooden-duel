@@ -454,3 +454,107 @@ kbd {
 .neon-text-yellow {
     color: var(--accent-gold) !important;
 }
+
+/* --- 開始畫面：登入區與排行榜（第一階段） --- */
+/* 開始畫面內容變長了，改為可捲動、從上方開始排，避免小螢幕被裁掉 */
+#start-screen {
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding: 2rem 1rem;
+}
+
+.auth-divider {
+    border-top: 2px solid var(--border-color);
+    margin: 1.5rem 0 1.2rem;
+}
+
+.auth-btn {
+    font-size: 1rem;
+    padding: 0.8rem 1.5rem;
+}
+
+.auth-btn.small-btn {
+    width: auto;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.9rem;
+}
+
+.auth-note {
+    margin-top: 0.8rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    text-align: center;
+}
+
+#auth-logged-in {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--border-highlight);
+}
+
+.user-name {
+    font-weight: 700;
+    color: var(--wood-light);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaderboard-panel {
+    margin-top: 1.5rem;
+}
+
+.leaderboard-loading,
+.leaderboard-empty {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+    padding: 0.5rem 0.4rem;
+    border-bottom: 1px solid rgba(109, 74, 45, 0.5);
+    text-align: center;
+}
+
+.leaderboard-table th {
+    color: var(--accent-gold);
+    font-family: 'Cinzel', serif;
+    letter-spacing: 1px;
+    font-size: 0.85rem;
+}
+
+.leaderboard-table .lb-name {
+    text-align: left;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaderboard-table .lb-rank {
+    font-weight: 700;
+}
+
+.leaderboard-table tr.leaderboard-me td {
+    color: var(--accent-gold);
+    font-weight: 700;
+}

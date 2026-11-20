@@ -33,6 +33,33 @@
                 <button id="start-pve-btn" class="wood-btn" style="flex: 1;">單人對抗電腦 (VS AI)</button>
                 <button id="start-pvp-btn" class="wood-btn" style="flex: 1;">雙人本地對戰 (2P)</button>
             </div>
+
+            <!-- 登入區：登入後 VS AI 的勝負會記錄到排行榜；未登入也可以直接玩 -->
+            <div class="auth-divider"></div>
+            <div id="auth-area">
+                <div id="auth-logged-out">
+                    <button id="google-login-btn" class="wood-btn auth-btn">使用 Google 帳號登入</button>
+                    <p class="auth-note">登入後，VS AI 的勝負會記錄到排行榜；未登入也可以直接玩。</p>
+                </div>
+                <div id="auth-logged-in" style="display: none;">
+                    <img id="user-avatar" class="user-avatar" src="" alt="玩家頭像">
+                    <span id="user-name" class="user-name"></span>
+                    <button id="logout-btn" class="wood-btn auth-btn small-btn">登出</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 排行榜：公開，依勝場由多到少取前 10 名 -->
+        <div class="card panel leaderboard-panel">
+            <h3>排行榜 TOP 10</h3>
+            <p id="leaderboard-loading" class="leaderboard-loading">載入中…</p>
+            <p id="leaderboard-empty" class="leaderboard-empty" style="display: none;">尚無紀錄，來打第一場吧！</p>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr><th>名次</th><th>玩家</th><th>勝</th><th>敗</th><th>勝率</th></tr>
+                </thead>
+                <tbody id="leaderboard-body"></tbody>
+            </table>
         </div>
     </div>
 
@@ -118,5 +145,6 @@
     </div>
 
     <script src="game.js"></script>
+    <script type="module" src="firebase.js"></script>
 </body>
 </html>

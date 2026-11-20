@@ -935,6 +935,17 @@ function showGameOver(winnerText) {
     const textEl = document.getElementById('winner-text');
     textEl.innerText = winnerText;
     textEl.setAttribute('data-text', winnerText);
+
+    // 第一階段記分：只計登入玩家的 VS AI 戰績（PVE 時玩家 1 是人類、玩家 2 是電腦）。
+    // 2P 本地對戰不計分；平手不計分；未登入時 recordResult 內部會直接略過。
+    if (gameMode === 'PVE' && window.WD && typeof window.WD.recordResult === 'function') {
+        if (winnerText === 'PLAYER 1 獲勝') {
+            window.WD.recordResult(true);
+        } else if (winnerText === 'PLAYER 2 獲勝') {
+            window.WD.recordResult(false);
+        }
+    }
+
     switchScreen('gameover-screen');
 }
 
