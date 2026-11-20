@@ -1053,3 +1053,33 @@ kbd {
 .howto-panel ul {
     margin-bottom: 0;
 }
+
+/* 每條說明兩欄排版：左欄圖示＋標題固定寬度不換行，右欄說明文字只在自己欄位內換行。
+   （舊版每條是整段文字，.card li 的 display:flex 會把圖示、標題、冒號、按鍵、
+   說明文字各拆成獨立的 flex 項目，寬度不夠時中文會從標題中間斷行、對不齊；
+   現在每條只有標題、說明兩個項目，就不會再拆散。） */
+.howto-panel li {
+    align-items: flex-start;
+    gap: 0.6rem;
+}
+
+.howto-item-title {
+    flex: 0 0 7em;
+    white-space: nowrap;
+}
+
+.howto-item-text {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 窄螢幕（手機 390px）：卡片內距縮小、標題欄略窄，標題仍不換行、說明仍對齊 */
+@media (max-width: 480px) {
+    .howto-panel {
+        padding: 1.25rem;
+    }
+
+    .howto-item-title {
+        flex-basis: 6.5em;
+    }
+}
