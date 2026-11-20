@@ -194,6 +194,72 @@ function onlineApplyCannon(c, s) {
   c.fallSpeed = 0;
 }
 
+// ---------- 接收端範圍檢查：對方傳來的資料先驗證再套用 ----------
+// 收到惡意或異常數值（NaN、超大 x、武器 99、負燃料）時直接丟掉，
+// 不要讓遊戲畫面錯亂或當掉；正常對戰的數值本來就在範圍內，不會被擋。
+// 註：武器只有 1（小高爆彈）和 2（大裂地彈）兩種，畫面上的「3」是連發開關，
+// 不是第三種武器，所以 selectedWeapon 只可能是 1 或 2。
+function onlineIsNumIn(v, lo, hi) {
+  return typeof v === "number" && isFinite(v) && v >= lo && v <= hi;
+}
+
+function onlineIsValidCannon(s) {
+  if (!s || typeof s !== "object") return false;
+  return onlineIsNumIn(s.x, 0, CANVAS_WIDTH)
+    && onlineIsNumIn(s.y, 0, CANVAS_HEIGHT)
+    && onlineIsNumIn(s.hp, 0, 100)
+    && onlineIsNumIn(s.angle, -180, 180)
+    && onlineIsNumIn(s.fuel, 0, 100)
+    && (s.weapon === 1 || s.weapon === 2)
+    && Number.isInteger(s.doubleUses) && s.doubleUses >= 0 && s.doubleUses <= 2
+    && typeof s.useDouble === "boolean"
+    && typeof s.isFalling === "boolean";
+}
+
+function onlineIsValidPose(p) {
+  if (!p || typeof p !== "object") return false;
+  return onlineIsNumIn(p.x, 0, CANVAS_WIDTH)
+    && onlineIsNumIn(p.angle, -180, 180)
+    && (p.weapon === 1 || p.weapon === 2)
+    && onlineIsNumIn(p.fuel, 0, 100)
+    && typeof p.useDouble === "boolean";
+}
+
+function onlineIsValidShot(s) {
+  if (!s || typeof s !== "object") return false;
+  return typeof s.shotId === "string" && s.shotId.length > 0
+    && (s.by === "p1" || s.by === "p2")
+    && onlineIsNumIn(s.fromX, 0, CANVAS_WIDTH)
+    && onlineIsNumIn(s.fromY, 0, CANVAS_HEIGHT)
+    && onlineIsNumIn(s.angle, -180, 180)
+    && onlineIsNumIn(s.power, 0, 100)
+    && (s.weapon === 1 || s.weapon === 2)
+    && typeof s.isGuided === "boolean"
+    && onlineIsNumIn(s.targetX, 0, CANVAS_WIDTH)
+    && onlineIsNumIn(s.targetY, 0, CANVAS_HEIGHT)
+    && onlineIsNumIn(s.wind, -5, 5);
+}
+
+function onlineIsValidHoles(holes) {
+  if (!Array.isArray(holes) || holes.length > 200) return false;
+  for (let i = 0; i < holes.length; i++) {
+    const h = holes[i];
+    if (!h || typeof h !== "object") return false;
+    if (!onlineIsNumIn(h.x, 0, CANVAS_WIDTH) || !onlineIsNumIn(h.y, 0, CANVAS_HEIGHT) || !onlineIsNumIn(h.r, 1, 100)) return false;
+  }
+  return true;
+}
+
+function onlineIsValidState(s) {
+  if (!s || typeof s !== "object") return false;
+  return (s.turn === "p1" || s.turn === "p2")
+    && Number.isInteger(s.round) && s.round >= 1
+    && onlineIsNumIn(s.wind, -5, 5)
+    && onlineIsValidCannon(s.p1)
+    && onlineIsValidCannon(s.p2)
+    && onlineIsValidHoles(s.holes || []);
+}
+
 // ---------- 回合內即時姿態同步：移動／角度／武器 ----------
 // 回合內移動只改本機砲台物件，不會寫進房間，所以對方看不到；
 // 這裡每幀檢查自己的砲台姿態，變了就節流寫入 rooms.poses.<slot>，對方即時套用。
@@ -271,9 +337,9 @@ function onlineFlushPose() {
   onlineSendPoseNow(pose, now);
 }
 
-// 對方姿態來了：只套用對方砲台的位置／角度／武器（不動 HP、勝負、回合）
+// 對方姿態來了：先檢查範圍，異常數值直接丟掉；只套用對方砲台的位置／角度／武器（不動 HP、勝負、回合）
 function onlineApplyOpponentPose(slot, pose) {
-  if (!pose || typeof pose.x !== "number") return;
+  if (!onlineIsValidPose(pose)) return;
   if (onlineReplay || onlineReplayQueue.length > 0) return; // 重播中不套用，等權威狀態
   const applied = onlineAppliedPose[slot] || { seq: 0, at: 0 };
   if (!(pose.seq > applied.seq || pose.at > applied.at)) return; // 過期快照不套用
@@ -289,9 +355,14 @@ function onlineApplyOpponentPose(slot, pose) {
   updateHUD();
 }
 
-// 把房間的權威狀態套用到本地遊戲物件
+// 把房間的權威狀態套用到本地遊戲物件：先檢查整個狀態，異常就整份丟掉、
+// 不要套用一半（否則血量或位置壞掉，遊戲就錯亂了）
 function onlineApplyOnlineState(state) {
   if (!state) return;
+  if (!onlineIsValidState(state)) {
+    console.warn("[WDOnline] 收到異常狀態，已丟掉", state);
+    return;
+  }
   onlineApplyCannon(player1, state.p1);
   onlineApplyCannon(player2, state.p2);
   onlineRebuildBridge(state.holes || []);
@@ -517,11 +588,16 @@ function onlineOnRoomSnapshot(data) {
       const other = onlineOtherSlot();
       if (data.poses[other]) onlineApplyOpponentPose(other, data.poses[other]);
     }
-    // 對方的新開火：排進重播佇列
+    // 對方的新開火：先檢查參數範圍，異常的直接丟掉（只記 shotId，避免重複處理），
+    // 正常的才排進重播佇列
     if (data.lastShot && data.lastShot.by !== onlineMySlot && data.lastShot.shotId !== onlineLastReplayedShotId) {
       onlineLastReplayedShotId = data.lastShot.shotId;
-      onlineReplayQueue.push(data.lastShot);
-      onlinePumpReplayQueue();
+      if (onlineIsValidShot(data.lastShot)) {
+        onlineReplayQueue.push(data.lastShot);
+        onlinePumpReplayQueue();
+      } else {
+        console.warn("[WDOnline] 收到異常開火參數，已丟掉", data.lastShot);
+      }
     }
     // 新權威狀態
     if (data.state && data.rev > onlineLastAppliedRev) {

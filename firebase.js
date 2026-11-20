@@ -332,8 +332,10 @@ async function leaveRoom(code, slot) {
     const data = snap.data();
     const other = slot === "p1" ? "p2" : "p1";
     if (data.leftBy === other || (slot === "p1" && !data.players.p2)) {
-      await deleteDoc(ref);
+      // 先清留言再刪房間：規則要求刪別人的留言時，必須能查到房間確認我是房內玩家；
+      // 房間先刪掉的話就查不到了，對方的留言會清不掉（只剩自己的能刪）。
       await deleteChatMessages(code); // 房間刪除時留言跟著清掉（朋友對戰，不用留存）
+      await deleteDoc(ref);
       return;
     }
     await updateDoc(ref, { leftBy: slot, updatedAt: serverTimestamp() });

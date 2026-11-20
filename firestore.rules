@@ -1,0 +1,503 @@
+rules_version = '2';
+
+// WOODEN DUEL — Firestore 嚴格規則（2026-11-20，配合 AGY 資安檢查報告第 1 批修復）
+//
+// 原則：
+// - 排行榜（players）與在線列表（presence）維持公開可讀（未登入也能看）。
+// - 所有寫入都要登入，而且只能寫自己的資料、只能做遊戲程式會做的那種寫入。
+// - 房間（rooms）禁止列出全部（allow list: if false），只能用代碼單筆讀取，
+//   否則任何人都能列出所有房間代碼、搶走別人的對戰位置。
+// - 計分（players）一次只能 wins 或 losses +1、games +1，避免一次改成 99999。
+//   注意：這只能擋「亂改數字」，不能防「在 console 重複呼叫記分」這種作弊，
+//   真正可信的計分要伺服器端（Cloud Functions），那是下一階段才做的事。
+// - 文字長度用 size() 算的是字元數（不是 UTF-8 位元組）：留言上限 200 字，
+//   跟程式的 200 字限制一致；名字上限 300 字（Google 名字通常不到 100 字）。
+//
+// 部署方式（這次只寫檔案、不部署）：Firebase Console → Firestore → 規則，
+// 或 firebase deploy --only firestore（需 firebase.json）。
+// 舊的寬鬆規則備份：
+//   match /{document=**} { allow read: if true; allow write: if request.auth != null; }
+// 部署後如果遊戲出問題，先還原成上面這份，再慢慢查是哪條規則擋掉了。
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- 共用 helper ----------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // 數字範圍檢查（NaN、Infinity 比較一定是 false，所以會被擋掉）
+    function isNumberIn(v, lo, hi) {
+      return v is number && v >= lo && v <= hi;
+    }
+
+    // Google 顯示名稱：token 有 name 時必須一致（防冒名），
+    // token 沒有 name 時只檢查長度（避免擋掉正常玩家）。
+    function isOwnName(name) {
+      return isSignedIn()
+        && name is string && name.size() > 0 && name.size() <= 300
+        && (!('name' in request.auth.token)
+          || request.auth.token.name == null
+          || name == request.auth.token.name);
+    }
+
+    // 頭像：空白，或 Google 使用者內容網域（lh3~lh6），擋追蹤像素。
+    function isPhotoURL(url) {
+      return url is string
+        && (url == "" || url.matches("^https://lh[3-6]\\.googleusercontent\\.com/.*"));
+    }
+
+    // ---------- players：排行榜（公開可讀） ----------
+    // 寫入：recordResult()，setDoc + merge，欄位 displayName / photoURL /
+    // wins / losses / games（increment）/ updatedAt（serverTimestamp）。
+    match /players/{uid} {
+      allow get, list: if true;
+
+      allow create: if isOwner(uid) && isValidPlayerDoc(request.resource.data, null);
+      allow update: if isOwner(uid) && isValidPlayerDoc(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+
+    // 計分規則：新文件 games 一定是 1、wins + losses 一定是 1；
+    // 之後每次 wins 或 losses 其中一個 +1、games +1，games 永遠等於 wins + losses。
+    // displayName / photoURL 必須是自己的；updatedAt 必須是伺服器時間。
+    function isValidPlayerDoc(d, old) {
+      return d.keys().hasOnly(['displayName', 'photoURL', 'wins', 'losses', 'games', 'updatedAt'])
+        && isOwnName(d.displayName)
+        && isPhotoURL(d.photoURL)
+        && d.wins is number && d.losses is number && d.games is number
+        && d.wins >= 0 && d.losses >= 0 && d.games >= 0
+        && d.games == d.wins + d.losses
+        && d.updatedAt == request.time
+        && (old == null
+          ? d.games == 1
+          : d.games == old.games + 1
+            && (d.wins == old.wins || d.wins == old.wins + 1)
+            && (d.losses == old.losses || d.losses == old.losses + 1)
+            && (d.wins + d.losses) == (old.wins + old.losses) + 1);
+    }
+
+    // ---------- rooms：線上對戰房間 ----------
+    // 讀：單筆 get 限登入者（加入房間、重進、建立時檢查代碼是否撞掉都需要），
+    // list 一律禁止（否則可列出全部房間代碼）。
+    // 寫：只有房內的 p1 / p2 能寫，而且只能做下面列出的那幾種寫入，
+    // 每一種都檢查「只改了該改的欄位、數值都在範圍內、rev 只 +1」。
+    match /rooms/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isValidRoomCreate(code);
+      // 更新：先用 diff().affectedKeys() 看「改了哪些頂層欄位」，只跑相關分支。
+      // （不要寫成 9 個分支的 OR：Firestore 一次評估最多 1000 個運算式，
+      //  而且預算是整個請求共用的——9 個分支全跑一遍會超過上限，
+      //  終局／再來一場這種排在後面的就被擋掉。實測：affectedKeys()
+      //  對點記法更新回傳的是頂層鍵，例如改 poses.p2 回傳 poses。）
+      allow update: if isSignedIn() && roomUpdateByKeys();
+      allow delete: if isSignedIn() && roomDeleteValid();
+    }
+
+    // 依「改了哪些頂層欄位」分派到對應的更新分支。
+    // hasOnly 是必要條件（改了不在清單內的欄位就不符），分支函式再驗證數值與 rev。
+    // 注意：一個寫入可能符合多個 hasOnly（子集合關係），例如狀態更新也符合終局的清單，
+    // 這時兩個分支都會跑，但不合的那個會在前幾項便宜檢查就失敗，不影響結果。
+    function roomUpdateByKeys() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return (changed.hasOnly(['players', 'status', 'rev', 'updatedAt']) && roomJoinValid())
+        || (changed.hasOnly(['updatedAt', 'leftBy']) && (roomRejoinValid() || roomLeaveValid()))
+        || (changed.hasOnly(['lastShot', 'updatedAt']) && roomShotValid())
+        || (changed.hasOnly(['poses', 'updatedAt']) && roomPoseValid())
+        || (changed.hasOnly(['state', 'rev', 'updatedAt']) && roomStateValid())
+        || (changed.hasOnly(['status', 'winner', 'state', 'rev', 'updatedAt']) && roomFinishValid())
+        || (changed.hasOnly(['status', 'winner', 'lastShot', 'leftBy', 'state', 'rev', 'updatedAt']) && roomRematchValid())
+        || (changed.hasOnly(['players', 'updatedAt']) && roomHeartbeatValid());
+    }
+
+    // 房內玩家（p1 或 p2）是誰
+    function mySlot(room) {
+      return room.players.p1 != null && room.players.p1.uid == request.auth.uid ? "p1"
+        : (room.players.p2 != null && room.players.p2.uid == request.auth.uid ? "p2" : null);
+    }
+
+    function otherSlot(slot) {
+      return slot == "p1" ? "p2" : "p1";
+    }
+
+    // 房間裡的玩家資料（create / join 時寫入）
+    function isValidRoomPlayer(p, uid) {
+      return p is map
+        && p.keys().hasOnly(['uid', 'displayName', 'photoURL', 'lastSeen'])
+        && p.uid == uid
+        && isOwnName(p.displayName)
+        && isPhotoURL(p.photoURL)
+        && p.lastSeen == request.time;
+    }
+
+    // 一台砲車的狀態（state.p1 / state.p2）
+    function isValidCannon(c) {
+      return c is map
+        && c.keys().hasOnly(['x', 'y', 'hp', 'angle', 'fuel', 'weapon', 'doubleUses', 'useDouble', 'isFalling'])
+        && isNumberIn(c.x, 0, 1024)
+        && isNumberIn(c.y, 0, 576)
+        && isNumberIn(c.hp, 0, 100)
+        && isNumberIn(c.angle, -180, 180)
+        && isNumberIn(c.fuel, 0, 100)
+        && c.weapon is int && c.weapon >= 1 && c.weapon <= 2
+        && c.doubleUses is int && c.doubleUses >= 0 && c.doubleUses <= 2
+        && c.useDouble is bool
+        && c.isFalling is bool;
+    }
+
+    // 一局的狀態。注意：holes 是 list，規則沒有迴圈，沒辦法逐一檢查洞的內容，
+    // 所以這裡只限制數量（<= 200）；洞的 x / y / r 範圍由接收端程式（online.js）檢查。
+    function isValidState(s) {
+      return s is map
+        && s.keys().hasOnly(['turn', 'round', 'wind', 'p1', 'p2', 'holes'])
+        && (s.turn == "p1" || s.turn == "p2")
+        && s.round is int && s.round >= 1
+        && isNumberIn(s.wind, -5, 5)
+        && isValidCannon(s.p1)
+        && isValidCannon(s.p2)
+        && s.holes is list && s.holes.size() <= 200;
+    }
+
+    // 開局狀態：p1 先攻、第一回合、雙方滿血、沒有洞。
+    function isValidInitialState(s) {
+      return isValidState(s)
+        && s.turn == "p1" && s.round == 1
+        && s.p1.hp == 100 && s.p2.hp == 100
+        && s.holes.size() == 0;
+    }
+
+    // 再來一場的狀態：跟開局一樣，但先攻可以是輸的那一方（p1 或 p2）。
+    function isValidFreshState(s) {
+      return isValidState(s)
+        && s.round == 1
+        && s.p1.hp == 100 && s.p2.hp == 100
+        && s.holes.size() == 0;
+    }
+
+    // 回合內即時姿態（poses.<slot>）：x / angle / weapon / fuel / useDouble，
+    // 再加 seq（序號）與 at（時間戳）兩個同步用的欄位。
+    function isValidPose(p) {
+      return p is map
+        && p.keys().hasOnly(['x', 'angle', 'weapon', 'fuel', 'useDouble', 'seq', 'at'])
+        && isNumberIn(p.x, 0, 1024)
+        && isNumberIn(p.angle, -180, 180)
+        && p.weapon is int && p.weapon >= 1 && p.weapon <= 2
+        && isNumberIn(p.fuel, 0, 100)
+        && p.useDouble is bool
+        && p.seq is int && p.seq >= 0
+        && p.at is number && p.at >= 0;
+    }
+
+    // 開火參數（lastShot）：對方收到後播放重播動畫。
+    function isValidShot(s) {
+      return s is map
+        && s.keys().hasOnly(['shotId', 'by', 'fromX', 'fromY', 'angle', 'power', 'weapon', 'isGuided', 'targetX', 'targetY', 'wind', 'at'])
+        && s.shotId is string && s.shotId.size() > 0 && s.shotId.size() <= 64
+        && (s.by == "p1" || s.by == "p2")
+        && isNumberIn(s.fromX, 0, 1024)
+        && isNumberIn(s.fromY, 0, 576)
+        && isNumberIn(s.angle, -180, 180)
+        && isNumberIn(s.power, 0, 100)
+        && s.weapon is int && s.weapon >= 1 && s.weapon <= 2
+        && s.isGuided is bool
+        && isNumberIn(s.targetX, 0, 1024)
+        && isNumberIn(s.targetY, 0, 576)
+        && isNumberIn(s.wind, -5, 5)
+        && s.at == request.time;
+    }
+
+    // 建立房間：我是 p1、waiting、rev 1、p2 空缺、還沒有贏家與離開標記。
+    function isValidRoomCreate(code) {
+      let n = request.resource.data;
+      return isSignedIn()
+        && n.keys().hasOnly(['code', 'status', 'createdAt', 'updatedAt', 'rev', 'players', 'state', 'lastShot', 'winner', 'leftBy'])
+        && n.code == code
+        && n.status == "waiting"
+        && n.createdAt == request.time
+        && n.updatedAt == request.time
+        && n.rev == 1
+        && n.players is map && n.players.keys().hasOnly(['p1', 'p2'])
+        && isValidRoomPlayer(n.players.p1, request.auth.uid)
+        && n.players.p2 == null
+        && isValidInitialState(n.state)
+        && n.lastShot == null && n.winner == null && n.leftBy == null;
+    }
+
+    // 加入房間（joinRoom 交易）：waiting → playing，p2 從空缺變成我，rev +1。
+    // 交易裡的讀取也要通過 allow get（登入即可），這裡只驗證寫入的部分。
+    function roomJoinValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      return o.status == "waiting"
+        && o.players.p2 == null
+        && o.players.p1.uid != request.auth.uid
+        && n.players.p1 == o.players.p1
+        && isValidRoomPlayer(n.players.p2, request.auth.uid)
+        && n.status == "playing"
+        && n.rev == o.rev + 1
+        && n.updatedAt == request.time
+        && n.code == o.code && n.createdAt == o.createdAt
+        && n.state == o.state && n.lastShot == o.lastShot
+        && n.winner == o.winner && n.leftBy == o.leftBy
+        && n.get('poses', null) == o.get('poses', null);
+    }
+
+    // 重進房間（rejoinRoom）：只更新 updatedAt；如果 leftBy 是我，就清掉。
+    function roomRejoinValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && n.updatedAt == request.time
+        && (n.leftBy == o.leftBy || (o.leftBy == slot && n.leftBy == null))
+        && n.code == o.code && n.status == o.status && n.createdAt == o.createdAt
+        && n.rev == o.rev && n.players == o.players && n.state == o.state
+        && n.lastShot == o.lastShot && n.winner == o.winner
+        && n.get('poses', null) == o.get('poses', null);
+    }
+
+    // 開火參數（sendShot）：只有房內玩家能寫，by 必須是自己的 slot。
+    // （便宜的檢查放前面，isValidShot 放最後，避免無關的寫入先燒掉評估預算）
+    function roomShotValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && n.updatedAt == request.time
+        && n.code == o.code && n.status == o.status && n.createdAt == o.createdAt
+        && n.rev == o.rev && n.players == o.players && n.state == o.state
+        && n.winner == o.winner && n.leftBy == o.leftBy
+        && n.get('poses', null) == o.get('poses', null)
+        && isValidShot(n.lastShot)
+        && n.lastShot.by == slot;
+    }
+
+    // 即時姿態（sendPose）：只能寫自己那個 slot，對方 slot 的姿態不能動。
+    function roomPoseValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      let other = otherSlot(slot);
+      return slot != null
+        && n.updatedAt == request.time
+        && n.code == o.code && n.status == o.status && n.createdAt == o.createdAt
+        && n.rev == o.rev && n.players == o.players && n.state == o.state
+        && n.lastShot == o.lastShot && n.winner == o.winner && n.leftBy == o.leftBy
+        && n.get('poses', {}).get(other, null) == o.get('poses', {}).get(other, null)
+        && isValidPose(n.get('poses', {}).get(slot, null));
+    }
+
+    // 回合結束的權威狀態（sendState）：輪到我時才能寫，rev +1，
+    // 新狀態的回合必須換成對方（程式本來就是這樣寫）。
+    function roomStateValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && o.state.turn == slot
+        && n.status == o.status
+        && n.rev == o.rev + 1
+        && n.updatedAt == request.time
+        && n.code == o.code && n.createdAt == o.createdAt
+        && n.players == o.players && n.lastShot == o.lastShot
+        && n.winner == o.winner && n.leftBy == o.leftBy
+        && n.get('poses', null) == o.get('poses', null)
+        && n.state is map && n.state.turn == otherSlot(slot)
+        && isValidState(n.state);
+    }
+
+    // 終局（finishRoom）：playing → finished，winner 只能是 p1 / p2 / draw，rev +1。
+    function roomFinishValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && o.status == "playing"
+        && n.status == "finished"
+        && (n.winner == "p1" || n.winner == "p2" || n.winner == "draw")
+        && n.rev == o.rev + 1
+        && n.updatedAt == request.time
+        && n.code == o.code && n.createdAt == o.createdAt
+        && n.players == o.players && n.lastShot == o.lastShot
+        && n.leftBy == o.leftBy
+        && n.get('poses', null) == o.get('poses', null)
+        && isValidState(n.state);
+    }
+
+    // 再來一場（rematchRoom）：finished → playing，winner / lastShot / leftBy 清掉，
+    // 新狀態必須是開局狀態（先攻可以是輸的那一方），rev +1。
+    function roomRematchValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && o.status == "finished"
+        && n.status == "playing"
+        && n.winner == null
+        && n.lastShot == null
+        && n.leftBy == null
+        && n.rev == o.rev + 1
+        && n.updatedAt == request.time
+        && n.code == o.code && n.createdAt == o.createdAt
+        && n.players == o.players
+        && n.get('poses', null) == o.get('poses', null)
+        && isValidFreshState(n.state);
+    }
+
+    // 標記離開（leaveRoom）：leftBy 從空變成自己的 slot（重複標記也算通過）。
+    function roomLeaveValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      return slot != null
+        && n.leftBy == slot
+        && (o.leftBy == null || o.leftBy == slot)
+        && n.updatedAt == request.time
+        && n.code == o.code && n.status == o.status && n.createdAt == o.createdAt
+        && n.rev == o.rev && n.players == o.players && n.state == o.state
+        && n.lastShot == o.lastShot && n.winner == o.winner
+        && n.get('poses', null) == o.get('poses', null);
+    }
+
+    // 心跳（heartbeatRoom）：只能更新自己那個 slot 的 lastSeen。
+    function roomHeartbeatValid() {
+      let o = resource.data;
+      let n = request.resource.data;
+      let slot = mySlot(o);
+      let other = otherSlot(slot);
+      return slot != null
+        && n.updatedAt == request.time
+        && n.players[slot].lastSeen == request.time
+        && n.players[slot].uid == o.players[slot].uid
+        && n.players[slot].displayName == o.players[slot].displayName
+        && n.players[slot].photoURL == o.players[slot].photoURL
+        && n.players[other] == o.players[other]
+        && n.code == o.code && n.status == o.status && n.createdAt == o.createdAt
+        && n.rev == o.rev && n.state == o.state && n.lastShot == o.lastShot
+        && n.winner == o.winner && n.leftBy == o.leftBy
+        && n.get('poses', null) == o.get('poses', null);
+    }
+
+    // 刪除房間（leaveRoom）：對方已經離開，或我是房主且還沒人加入。
+    function roomDeleteValid() {
+      let slot = mySlot(resource.data);
+      return slot != null
+        && ((slot == "p1" && resource.data.players.p2 == null)
+          || resource.data.leftBy == otherSlot(slot));
+    }
+
+    // ---------- chatMessages：線上對戰留言 ----------
+    // 讀：登入才能查（查詢只用 roomCode 一個條件）。
+    // 寫：只能用自己的 uid 發、200 字以內、必須是房內玩家（防拿別人的房間代碼洗版）。
+    // 刪：自己的留言，或房內玩家在刪房間時一起清掉（leaveRoom 會先清留言再刪房間）。
+    match /chatMessages/{id} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['roomCode', 'uid', 'displayName', 'text', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && isOwnName(request.resource.data.displayName)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 200
+        && request.resource.data.roomCode is string
+        && request.resource.data.roomCode.size() == 6
+        && request.resource.data.createdAt == request.time
+        && isRoomPlayerByCode(request.resource.data.roomCode);
+
+      allow update: if false;
+
+      allow delete: if isSignedIn()
+        && (resource.data.uid == request.auth.uid
+          || isRoomPlayerByCode(resource.data.roomCode));
+    }
+
+    // 查某個房間代碼的房間，我是不是裡面的玩家（p1 或 p2）。
+    // 房間不存在（已經被刪了）就回傳 false，這時只能刪自己的留言。
+    // 先用 exists() 檢查，否則對不存在的房間做 get().data 會報錯。
+    function isRoomPlayerByCode(roomCode) {
+      let ref = /databases/$(database)/documents/rooms/$(roomCode);
+      return exists(ref) && isRoomPlayerIn(get(ref).data);
+    }
+
+    function isRoomPlayerIn(roomData) {
+      return (roomData.players.p1 != null && roomData.players.p1.uid == request.auth.uid)
+        || (roomData.players.p2 != null && roomData.players.p2.uid == request.auth.uid);
+    }
+
+    // ---------- presence：在線狀態（公開可讀） ----------
+    // 寫：只能寫自己的文件（文件 id 就是 uid）；lastSeen 必須是伺服器時間。
+    match /presence/{uid} {
+      allow get, list: if true;
+
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['displayName', 'photoURL', 'lastSeen', 'inGame'])
+        && isOwnName(request.resource.data.displayName)
+        && isPhotoURL(request.resource.data.photoURL)
+        && request.resource.data.lastSeen == request.time
+        && request.resource.data.inGame is bool;
+
+      allow delete: if isOwner(uid);
+    }
+
+    // ---------- invites：邀請對戰 ----------
+    // 讀：單筆 get 限寄件人或收件人；列表查詢限 toUid 是自己
+    // （被邀請人是用 where toUid == 自己 監聽，規則寫 OR 的話查詢會被拒絕，
+    // 所以 list 一定只能寫 toUid 這個條件）。
+    // 寫：建立時 fromUid 必須是自己、不能邀請自己、狀態一定是 pending；
+    // 更新只能改 status，而且只能從 pending 改：收件人可改 accepted / declined / expired，
+    // 寄件人可改 cancelled / expired（兩邊各有一個 60 秒逾時計時器）。
+    match /invites/{id} {
+      allow get: if isSignedIn()
+        && (resource.data.fromUid == request.auth.uid
+          || resource.data.toUid == request.auth.uid);
+      allow list: if isSignedIn()
+        && request.auth.uid == resource.data.toUid;
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['fromUid', 'fromName', 'fromPhoto', 'toUid', 'roomCode', 'status', 'createdAt'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.toUid.size() > 0
+        && request.resource.data.toUid != request.auth.uid
+        && isOwnName(request.resource.data.fromName)
+        && isPhotoURL(request.resource.data.fromPhoto)
+        && request.resource.data.roomCode is string
+        && request.resource.data.roomCode.size() == 6
+        && request.resource.data.status == "pending"
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isSignedIn()
+        && resource.data.status == "pending"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.fromUid == resource.data.fromUid
+        && request.resource.data.fromName == resource.data.fromName
+        && request.resource.data.fromPhoto == resource.data.fromPhoto
+        && request.resource.data.toUid == resource.data.toUid
+        && request.resource.data.roomCode == resource.data.roomCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && ((resource.data.toUid == request.auth.uid
+            && (request.resource.data.status == "accepted"
+              || request.resource.data.status == "declined"
+              || request.resource.data.status == "expired"))
+          || (resource.data.fromUid == request.auth.uid
+            && (request.resource.data.status == "cancelled"
+              || request.resource.data.status == "expired")));
+
+      allow delete: if false;
+    }
+
+    // ---------- 其他 collection：一律不准 ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
