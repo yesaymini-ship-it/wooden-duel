@@ -24,17 +24,7 @@
         </div>
 
         <div class="card panel">
-            <h3>遊戲玩法說明</h3>
-            <ul>
-                <li>🎮 <b>移動大砲</b>：使用 <kbd>A</kbd> / <kbd>D</kbd> 鍵在橋上左右移動（每回合有移動限制）。</li>
-                <li>📐 <b>調整角度</b>：使用 <kbd>W</kbd> / <kbd>S</kbd> 鍵上下旋轉砲管。</li>
-                <li>⚔️ <b>切換砲彈</b>：按數字鍵 <kbd>1</kbd>（小高爆彈）或 <kbd>2</kbd>（大裂地彈），或 <kbd>3</kbd>（連發雙彈，每局2次）。</li>
-                <li>⚡ <b>調整力道</b>：使用 <kbd>Space</kbd> 鍵蓄力，釋放後發射砲彈！</li>
-                <li>📱 <b>手機操作</b>：用遊戲畫面下方的觸控按鈕移動、調角度、切換砲彈與蓄力發射。</li>
-                <li>💨 <b>風向影響</b>：注意畫面上方的動態風向，風會影響砲彈拋物線。</li>
-                <li>💥 <b>勝利條件</b>：擊中對手扣除 HP 歸零，或**利用大砲彈在獨木橋挖洞使對手墜落谷底**！</li>
-            </ul>
-            <div style="display: flex; gap: 15px; margin-top: 20px; justify-content: center; width: 100%;">
+            <div style="display: flex; gap: 15px; justify-content: center; width: 100%;">
                 <button id="start-pve-btn" class="wood-btn" style="flex: 1;">單人對抗電腦 (VS AI)</button>
                 <button id="start-pvp-btn" class="wood-btn" style="flex: 1;">雙人本地對戰 (2P)</button>
             </div>
@@ -109,6 +99,23 @@
                 <button id="online-invite-cancel-btn" class="wood-btn auth-btn" type="button">取消邀請</button>
             </div>
         </div>
+
+        <!-- 遊戲玩法說明：預設收合，點標題展開／收起（內容與舊版一字不改） -->
+        <details class="card panel howto-panel">
+            <summary class="howto-summary">
+                <span class="howto-title">遊戲玩法說明</span>
+                <span class="howto-arrow" aria-hidden="true">▸</span>
+            </summary>
+            <ul>
+                <li>🎮 <b>移動大砲</b>：使用 <kbd>A</kbd> / <kbd>D</kbd> 鍵在橋上左右移動（每回合有移動限制）。</li>
+                <li>📐 <b>調整角度</b>：使用 <kbd>W</kbd> / <kbd>S</kbd> 鍵上下旋轉砲管。</li>
+                <li>⚔️ <b>切換砲彈</b>：按數字鍵 <kbd>1</kbd>（小高爆彈）或 <kbd>2</kbd>（大裂地彈），或 <kbd>3</kbd>（連發雙彈，每局2次）。</li>
+                <li>⚡ <b>調整力道</b>：使用 <kbd>Space</kbd> 鍵蓄力，釋放後發射砲彈！</li>
+                <li>📱 <b>手機操作</b>：用遊戲畫面下方的觸控按鈕移動、調角度、切換砲彈與蓄力發射。</li>
+                <li>💨 <b>風向影響</b>：注意畫面上方的動態風向，風會影響砲彈拋物線。</li>
+                <li>💥 <b>勝利條件</b>：擊中對手扣除 HP 歸零，或**利用大砲彈在獨木橋挖洞使對手墜落谷底**！</li>
+            </ul>
+        </details>
     </div>
 
     <!-- 遊戲主畫面 -->

@@ -1003,3 +1003,53 @@ kbd {
     color: #f3e5c0;
     font-size: 1rem;
 }
+
+/* --- 遊戲玩法說明：預設收合（details/summary 原生收合，桌機與手機點標題都能開合） --- */
+.howto-panel {
+    margin-top: 1.5rem;
+}
+
+.howto-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.howto-summary::-webkit-details-marker {
+    display: none;
+}
+
+.howto-title {
+    font-family: 'Cinzel', serif;
+    color: var(--accent-gold);
+    letter-spacing: 2px;
+    font-size: 1.5rem;
+    flex: 1;
+}
+
+.howto-arrow {
+    color: var(--accent-gold);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+/* 展開時箭頭轉向、標題下方出現分隔線；收合時整張卡只剩標題列 */
+.howto-panel[open ] .howto-arrow {
+    transform: rotate(90deg);
+}
+
+.howto-panel[open ] .howto-summary {
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.howto-panel ul {
+    margin-bottom: 0;
+}
