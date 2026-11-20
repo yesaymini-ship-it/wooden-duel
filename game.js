@@ -525,6 +525,8 @@ function releaseFire() {
 
 // --- 輸入處理 ---
 function handleKeyDown(e) {
+    // 在輸入框打字時不要攔截按鍵（例如房間代碼輸入框）
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
     if (isAutoAiming) return;
     // 防止空白鍵使網頁向下滾動，也防止空白鍵重複觸發按鈕
     if (e.code === 'Space') {
@@ -570,6 +572,8 @@ function handleKeyDown(e) {
 }
 
 function handleKeyUp(e) {
+    // 在輸入框打字時不要攔截按鍵（例如房間代碼輸入框）
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
     if (isAutoAiming) return;
     if (gameMode === 'PVE' && currentPlayer === 2) return; // 電腦回合禁止手動輸入
 

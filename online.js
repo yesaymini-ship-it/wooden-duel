@@ -851,7 +851,14 @@ function onlineBindUI() {
   b = onlineEl("online-back-btn");
   if (b) b.addEventListener("click", function (e) { e.target.blur(); onlineLeaveRoomFlow(); });
   const input = onlineEl("online-join-code");
-  if (input) input.addEventListener("keydown", function (e) { if (e.key === "Enter") onlineJoinRoomFlow(input.value); });
+  if (input) {
+    // 打字時即時轉大寫、只留英數字
+    input.addEventListener("input", function () {
+      const v = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (input.value !== v) input.value = v;
+    });
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") onlineJoinRoomFlow(input.value); });
+  }
 }
 onlineBindUI();
 
