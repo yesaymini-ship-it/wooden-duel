@@ -355,6 +355,46 @@ window.onload = function() {
         });
     }
 
+    // --- 觸控按鈕（手機） ---
+    // 按住型：按住操作、放開停止；直接操作 keys 狀態，與按住鍵盤完全一樣
+    function bindHoldButton(id, onPress, onRelease) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        const press = function(e) {
+            e.preventDefault();
+            onPress();
+        };
+        const release = function(e) {
+            e.preventDefault();
+            onRelease();
+        };
+        btn.addEventListener('touchstart', press, { passive: false });
+        btn.addEventListener('touchend', release, { passive: false });
+        btn.addEventListener('touchcancel', release, { passive: false });
+        btn.addEventListener('mousedown', press);
+        btn.addEventListener('mouseup', release);
+        btn.addEventListener('mouseleave', release);
+        btn.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    }
+    // 點按型：點一下執行一次
+    function bindTapButton(id, onTap) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            onTap();
+        });
+    }
+
+    bindHoldButton('touch-left', function() { if (canAcceptInput()) keys.a = true; }, function() { keys.a = false; });
+    bindHoldButton('touch-right', function() { if (canAcceptInput()) keys.d = true; }, function() { keys.d = false; });
+    bindHoldButton('touch-up', function() { if (canAcceptInput()) keys.w = true; }, function() { keys.w = false; });
+    bindHoldButton('touch-down', function() { if (canAcceptInput()) keys.s = true; }, function() { keys.s = false; });
+    bindHoldButton('touch-fire', function() { startCharging(); }, function() { releaseFire(); });
+    bindTapButton('touch-w1', function() { selectWeapon(1); });
+    bindTapButton('touch-w2', function() { selectWeapon(2); });
+    bindTapButton('touch-w3', function() { selectWeapon(3); });
+
     // 鍵盤事件監聽
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -425,6 +465,58 @@ function switchScreen(screenId) {
     document.getElementById(screenId).classList.add('active');
 }
 
+// --- 鍵盤／觸控共用輸入邏輯 ---
+// 觸控按鈕直接操作同一個 keys 狀態，行為與按住鍵盤完全一樣
+function canAcceptInput() {
+    if (isAutoAiming) return false;
+    if (gameMode === 'PVE' && currentPlayer === 2) return false; // 電腦回合禁止手動輸入
+    return gameState === STATES.PLAYING || gameState === STATES.CHARGING;
+}
+
+// 切換砲彈（鍵盤 1／2／3 與觸控按鈕共用）
+function selectWeapon(n) {
+    if (!canAcceptInput() || gameState !== STATES.PLAYING) return;
+    const activePlayer = currentPlayer === 1 ? player1 : player2;
+    if (n === 1) {
+        activePlayer.selectedWeapon = 1;
+        updateHUD();
+        createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, activePlayer.color);
+    } else if (n === 2) {
+        activePlayer.selectedWeapon = 2;
+        updateHUD();
+        createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, COLORS.yellow);
+    } else if (n === 3) {
+        if (activePlayer.doubleUses > 0) {
+            activePlayer.useDouble = !activePlayer.useDouble;
+            updateHUD();
+            createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, COLORS.magenta);
+        }
+    }
+}
+
+// 開始蓄力（鍵盤空白鍵與觸控「發射」按鈕共用）
+function startCharging() {
+    if (!canAcceptInput() || gameState !== STATES.PLAYING) return;
+    keys.space = true;
+    gameState = STATES.CHARGING;
+    chargePower = 0;
+    document.getElementById('power-overlay').style.display = 'flex';
+}
+
+// 放開發射（放開空白鍵與放開觸控「發射」按鈕共用）
+function releaseFire() {
+    if (isAutoAiming) {
+        keys.space = false;
+        return;
+    }
+    if (gameState !== STATES.CHARGING) {
+        keys.space = false;
+        return;
+    }
+    keys.space = false;
+    fireProjectile();
+}
+
 // --- 輸入處理 ---
 function handleKeyDown(e) {
     if (isAutoAiming) return;
@@ -443,29 +535,10 @@ function handleKeyDown(e) {
         return;
     }
 
-    // 武器切換 (按鍵 1 與 2)
-    if (e.key === '1' && gameState === STATES.PLAYING) {
-        const activePlayer = currentPlayer === 1 ? player1 : player2;
-        activePlayer.selectedWeapon = 1;
-        updateHUD();
-        // 播放切換音效粒子或發光
-        createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, activePlayer.color);
-    }
-    if (e.key === '2' && gameState === STATES.PLAYING) {
-        const activePlayer = currentPlayer === 1 ? player1 : player2;
-        activePlayer.selectedWeapon = 2;
-        updateHUD();
-        // 播放切換音效粒子
-        createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, COLORS.yellow);
-    }
-    if (e.key === '3' && gameState === STATES.PLAYING) {
-        const activePlayer = currentPlayer === 1 ? player1 : player2;
-        if (activePlayer.doubleUses > 0) {
-            activePlayer.useDouble = !activePlayer.useDouble;
-            updateHUD();
-            createMuzzleFlash(activePlayer.x, activePlayer.y - 10, activePlayer.angle, COLORS.magenta);
-        }
-    }
+    // 武器切換 (按鍵 1、2、3，與觸控按鈕共用 selectWeapon)
+    if (e.key === '1') selectWeapon(1);
+    if (e.key === '2') selectWeapon(2);
+    if (e.key === '3') selectWeapon(3);
 
     if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -484,12 +557,9 @@ function handleKeyDown(e) {
         keys.s = true;
     }
     
-    if (e.code === 'Space' && gameState === STATES.PLAYING) {
+    if (e.code === 'Space') {
         e.preventDefault();
-        keys.space = true;
-        gameState = STATES.CHARGING;
-        chargePower = 0;
-        document.getElementById('power-overlay').style.display = 'flex';
+        startCharging();
     }
 }
 
@@ -506,9 +576,8 @@ function handleKeyUp(e) {
     if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.w = false;
     if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.s = false;
 
-    if (e.code === 'Space' && gameState === STATES.CHARGING) {
-        keys.space = false;
-        fireProjectile();
+    if (e.code === 'Space') {
+        releaseFire();
     }
 }
 

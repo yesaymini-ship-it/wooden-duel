@@ -558,3 +558,88 @@ kbd {
     color: var(--accent-gold);
     font-weight: 700;
 }
+
+/* --- 手機觸控按鈕 --- */
+.touch-controls {
+    display: none; /* 桌機預設隱藏 */
+    width: 100%;
+    max-width: 1100px;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.touch-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.touch-btn {
+    min-width: 60px;
+    min-height: 60px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: linear-gradient(180deg, #815938, #53361e);
+    border: 3px solid #331e0f;
+    border-radius: 12px;
+    box-shadow: 0 4px 0px #2a1608, 0 6px 12px rgba(0,0,0,0.5);
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    cursor: pointer;
+    touch-action: none; /* 防止點按時捲動或縮放 */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0px #2a1608, 0 3px 6px rgba(0,0,0,0.5);
+    background: linear-gradient(180deg, #946945, #614127);
+}
+
+.touch-weapon {
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+}
+
+.touch-fire {
+    min-width: 110px;
+    min-height: 72px;
+    font-size: 1.4rem;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 2px;
+    background: linear-gradient(180deg, #a8542f, #7a3a1c);
+    border-color: #4a2408;
+}
+
+.touch-aim {
+    width: auto;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    letter-spacing: 1px;
+}
+
+/* 觸控裝置才顯示觸控按鈕、隱藏鍵盤提示；桌機保持原樣 */
+@media (hover: none), (pointer: coarse) {
+    .touch-controls {
+        display: flex;
+    }
+    .control-help {
+        display: none;
+    }
+    .hud-bottom {
+        justify-content: center;
+    }
+    #game-screen {
+        justify-content: flex-start;
+        overflow-y: auto;
+    }
+    .hud-top {
+        position: static;
+        transform: none;
+        margin-bottom: 0.75rem;
+    }
+}

@@ -26,6 +26,7 @@
                 <li>📐 <b>調整角度</b>：使用 <kbd>W</kbd> / <kbd>S</kbd> 鍵上下旋轉砲管。</li>
                 <li>⚔️ <b>切換砲彈</b>：按數字鍵 <kbd>1</kbd>（小高爆彈）或 <kbd>2</kbd>（大裂地彈），或 <kbd>3</kbd>（連發雙彈，每局2次）。</li>
                 <li>⚡ <b>調整力道</b>：使用 <kbd>Space</kbd> 鍵蓄力，釋放後發射砲彈！</li>
+                <li>📱 <b>手機操作</b>：用遊戲畫面下方的觸控按鈕移動、調角度、切換砲彈與蓄力發射。</li>
                 <li>💨 <b>風向影響</b>：注意畫面上方的動態風向，風會影響砲彈拋物線。</li>
                 <li>💥 <b>勝利條件</b>：擊中對手扣除 HP 歸零，或**利用大砲彈在獨木橋挖洞使對手墜落谷底**！</li>
             </ul>
@@ -130,8 +131,26 @@
             </div>
             <div class="current-player-action">
                 當前移動限制 (行動力): <span id="fuel-value">100</span>%
-                <button id="auto-aim-btn" class="wood-btn" style="width: auto; padding: 0.4rem 1rem; margin-left: 20px; font-size: 0.9rem; letter-spacing: 1px; box-shadow: 0 3px 0px #2a1608, 0 5px 10px rgba(0,0,0,0.5);">自動瞄準 (H)</button>
             </div>
+        </div>
+
+        <!-- 手機觸控按鈕（觸控裝置才顯示，桌機隱藏） -->
+        <div class="touch-controls">
+            <div class="touch-group">
+                <button id="touch-left" class="touch-btn" type="button" aria-label="向左移動">◀</button>
+                <button id="touch-right" class="touch-btn" type="button" aria-label="向右移動">▶</button>
+            </div>
+            <div class="touch-group">
+                <button id="touch-up" class="touch-btn" type="button" aria-label="角度上調">▲</button>
+                <button id="touch-down" class="touch-btn" type="button" aria-label="角度下調">▼</button>
+            </div>
+            <div class="touch-group">
+                <button id="touch-w1" class="touch-btn touch-weapon" type="button" aria-label="小高爆彈">1</button>
+                <button id="touch-w2" class="touch-btn touch-weapon" type="button" aria-label="大裂地彈">2</button>
+                <button id="touch-w3" class="touch-btn touch-weapon" type="button" aria-label="連發雙彈">3</button>
+            </div>
+            <button id="auto-aim-btn" class="wood-btn touch-aim" type="button">自動瞄準 (H)</button>
+            <button id="touch-fire" class="touch-btn touch-fire" type="button">發射</button>
         </div>
     </div>
 
