@@ -43,6 +43,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 
+// 每次登入都顯示 Google 帳號選擇畫面，才能切換不同帳號
+googleProvider.setCustomParameters({ prompt: "select_account" });
+
 let currentUser = null;
 
 function $(id) {
