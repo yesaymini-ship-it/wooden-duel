@@ -34,6 +34,7 @@
                 <button id="start-pve-btn" class="wood-btn" style="flex: 1;">單人對抗電腦 (VS AI)</button>
                 <button id="start-pvp-btn" class="wood-btn" style="flex: 1;">雙人本地對戰 (2P)</button>
             </div>
+            <button id="start-online-btn" class="wood-btn" style="margin-top: 15px;">線上對戰 (真人)</button>
 
             <!-- 登入區：登入後 VS AI 的勝負會記錄到排行榜；未登入也可以直接玩 -->
             <div class="auth-divider"></div>
@@ -61,6 +62,36 @@
                 </thead>
                 <tbody id="leaderboard-body"></tbody>
             </table>
+        </div>
+
+        <!-- 線上對戰：開房間邀朋友（第二階段） -->
+        <div id="online-panel" class="card panel online-panel" style="display: none;">
+            <h3>線上對戰</h3>
+            <div id="online-login-note">
+                <p class="auth-note">線上對戰需要先登入 Google 帳號。</p>
+                <button id="online-login-btn" class="wood-btn auth-btn">使用 Google 帳號登入</button>
+            </div>
+            <div id="online-setup" style="display: none;">
+                <button id="online-create-btn" class="wood-btn">建立房間</button>
+                <p class="online-or">或</p>
+                <div class="online-join-row">
+                    <input id="online-join-code" class="online-code-input" type="text" maxlength="6" placeholder="輸入 6 碼房間代碼" autocomplete="off">
+                    <button id="online-join-btn" class="wood-btn">加入房間</button>
+                </div>
+                <p id="online-error" class="online-error" style="display: none;"></p>
+            </div>
+            <div id="online-waiting" style="display: none;">
+                <p class="online-room-label">房間代碼</p>
+                <p id="online-room-code" class="online-room-code">------</p>
+                <p class="online-room-label">邀請連結（傳給朋友，點開直接加入）</p>
+                <div class="online-join-row">
+                    <input id="online-invite-link" class="online-invite-input" type="text" readonly>
+                    <button id="online-copy-link-btn" class="wood-btn auth-btn small-btn">複製連結</button>
+                </div>
+                <ul id="online-players-list" class="online-players-list"></ul>
+                <p id="online-waiting-status" class="online-waiting-status">等待對方加入…</p>
+                <button id="online-cancel-btn" class="wood-btn auth-btn">取消</button>
+            </div>
         </div>
     </div>
 
@@ -108,6 +139,7 @@
         </div>
 
         <!-- 遊戲畫布容器 -->
+        <div id="online-left-banner" class="online-left-banner" style="display: none;"></div>
         <div class="canvas-container">
             <canvas id="gameCanvas" width="1024" height="576"></canvas>
             
@@ -132,6 +164,7 @@
             <div class="current-player-action">
                 當前移動限制 (行動力): <span id="fuel-value">100</span>%
             </div>
+            <button id="online-leave-btn" class="wood-btn auth-btn small-btn" type="button" style="display: none;">離開房間</button>
         </div>
 
         <!-- 手機觸控按鈕（觸控裝置才顯示，桌機隱藏） -->
@@ -161,9 +194,12 @@
             <p class="winner-subtitle">你成功擊墜了敵方大砲！</p>
         </div>
         <button id="restart-btn" class="wood-btn">再戰一局</button>
+        <button id="online-rematch-btn" class="wood-btn" style="display: none;">再來一場</button>
+        <button id="online-back-btn" class="wood-btn" style="display: none;">回主畫面</button>
     </div>
 
     <script src="game.js"></script>
+    <script src="online.js"></script>
     <script type="module" src="firebase.js"></script>
 </body>
 </html>

@@ -643,3 +643,111 @@ kbd {
         margin-bottom: 0.75rem;
     }
 }
+
+/* --- 線上對戰（第二階段） --- */
+.online-panel {
+    margin-top: 1.5rem;
+}
+
+.online-or {
+    text-align: center;
+    color: var(--text-muted);
+    margin: 1rem 0;
+}
+
+.online-join-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.online-code-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.8rem 1rem;
+    font-size: 1.1rem;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: monospace;
+}
+
+.online-code-input::placeholder {
+    letter-spacing: 1px;
+    font-size: 0.9rem;
+}
+
+.online-invite-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--wood-light);
+}
+
+.online-error {
+    color: #ff9a8a;
+    font-size: 0.95rem;
+    text-align: center;
+    margin-top: 1rem;
+    line-height: 1.5;
+}
+
+.online-room-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
+
+.online-room-code {
+    font-family: 'Cinzel', serif;
+    font-size: 2.5rem;
+    font-weight: 900;
+    letter-spacing: 10px;
+    color: var(--accent-gold);
+    text-align: center;
+    margin: 0.3rem 0 0.5rem;
+}
+
+.online-players-list {
+    list-style: none;
+    margin: 1rem 0;
+}
+
+.online-players-list li {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.online-waiting-status {
+    color: var(--wood-light);
+    text-align: center;
+    margin: 0.8rem 0 1.2rem;
+}
+
+.online-left-banner {
+    width: 100%;
+    max-width: 1000px;
+    margin: 0.5rem auto;
+    padding: 0.7rem 1rem;
+    text-align: center;
+    background: rgba(120, 40, 20, 0.9);
+    border: 2px solid #a8542f;
+    border-radius: 8px;
+    color: #ffd9c9;
+    font-size: 0.95rem;
+    z-index: 13;
+}
+
+#online-rematch-btn,
+#online-back-btn {
+    max-width: 250px;
+    margin-top: 1rem;
+}

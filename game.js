@@ -469,6 +469,12 @@ function switchScreen(screenId) {
 // 觸控按鈕直接操作同一個 keys 狀態，行為與按住鍵盤完全一樣
 function canAcceptInput() {
     if (isAutoAiming) return false;
+    // 線上模式：只有輪到自己的回合才能操作，且重播對方開火動畫時不能操作
+    if (gameMode === 'ONLINE') {
+        if (!window.WDOnline || typeof window.WDOnline.isMyTurn !== 'function' || !window.WDOnline.isMyTurn()) return false;
+        if (typeof window.WDOnline.isReplayActive === 'function' && window.WDOnline.isReplayActive()) return false;
+        return gameState === STATES.PLAYING || gameState === STATES.CHARGING;
+    }
     if (gameMode === 'PVE' && currentPlayer === 2) return false; // 電腦回合禁止手動輸入
     return gameState === STATES.PLAYING || gameState === STATES.CHARGING;
 }
@@ -659,6 +665,18 @@ function fireProjectile() {
 
     // 砲口噴射粒子
     createMuzzleFlash(startX, startY, activePlayer.angle, projColor);
+
+    // 線上模式：把這一發的參數送到房間，對方收到後播放重播動畫
+    if (gameMode === 'ONLINE' && window.WDOnline && typeof window.WDOnline.onLocalShotFired === 'function') {
+        window.WDOnline.onLocalShotFired({
+            fromX: startX, fromY: startY,
+            angle: activePlayer.angle, power: lastChargePower,
+            weapon: weaponType, isGuided: isAutoAiming,
+            targetX: autoAimTarget ? autoAimTarget.x : 0,
+            targetY: autoAimTarget ? autoAimTarget.y : 0,
+            wind: wind
+        });
+    }
 }
 
 // 檢測大砲是否在橋體區段上
@@ -849,7 +867,11 @@ function checkCollision(proj, target) {
 function addBridgeHole(hx, hy, hr) {
     // 儲存此爆炸孔，用於視覺渲染 (使用 destination-out 擦除)
     bridgeHoles.push({ x: hx, y: hy, r: hr });
+    carveBridgeHole(hx, hy, hr);
+}
 
+// 只改高度地圖（不記錄洞）：線上模式重建橋洞時共用
+function carveBridgeHole(hx, hy, hr) {
     // 更新物理地圖
     const startX = Math.max(0, Math.floor(hx - hr));
     const endX = Math.min(CANVAS_WIDTH - 1, Math.ceil(hx + hr));
@@ -965,6 +987,15 @@ function calculateSplashDamage(explX, explY, weaponType = 1) {
 
 // 切換回合準備
 function startTurnSwitch() {
+    // 線上模式：回合切換由房間狀態統一處理——開火方把新狀態寫入房間，雙方監聽套用。
+    // 不是自己回合時（例如對方開火挖的洞讓我方墜落），本地不自行切換，等房間狀態。
+    if (gameMode === 'ONLINE') {
+        if (window.WDOnline && typeof window.WDOnline.isMyTurn === 'function' && window.WDOnline.isMyTurn() &&
+            typeof window.WDOnline.commitTurnResult === 'function') {
+            window.WDOnline.commitTurnResult();
+        }
+        return;
+    }
     gameState = STATES.SWITCH_TURN;
     setTimeout(() => {
         currentPlayer = currentPlayer === 1 ? 2 : 1;
@@ -986,6 +1017,10 @@ function startTurnSwitch() {
 }
 
 function checkWinCondition() {
+    // 線上模式：勝負由開火方（回合持有者）的模擬判定，另一方不自行判定，等房間狀態。
+    if (gameMode === 'ONLINE') {
+        if (!window.WDOnline || typeof window.WDOnline.isMyTurn !== 'function' || !window.WDOnline.isMyTurn()) return false;
+    }
     if (player1.hp <= 0 && player2.hp <= 0) {
         showGameOver("雙方平手");
         return true;
@@ -1005,13 +1040,28 @@ function showGameOver(winnerText) {
     textEl.innerText = winnerText;
     textEl.setAttribute('data-text', winnerText);
 
-    // 第一階段記分：只計登入玩家的 VS AI 戰績（PVE 時玩家 1 是人類、玩家 2 是電腦）。
-    // 2P 本地對戰不計分；平手不計分；未登入時 recordResult 內部會直接略過。
-    if (gameMode === 'PVE' && window.WD && typeof window.WD.recordResult === 'function') {
-        if (winnerText === 'PLAYER 1 獲勝') {
-            window.WD.recordResult(true);
-        } else if (winnerText === 'PLAYER 2 獲勝') {
-            window.WD.recordResult(false);
+    // 線上模式：勝負與記分由房間狀態統一處理（快照收到 finished 才記分，避免重複）。
+    if (gameMode === 'ONLINE') {
+        if (window.WDOnline && typeof window.WDOnline.onLocalGameOver === 'function') {
+            window.WDOnline.onLocalGameOver(winnerText);
+        }
+    } else {
+        // 本地模式：顯示原本的再戰一局，收起線上按鈕
+        const restartBtnEl = document.getElementById('restart-btn');
+        if (restartBtnEl) restartBtnEl.style.display = '';
+        const rematchBtnEl = document.getElementById('online-rematch-btn');
+        if (rematchBtnEl) rematchBtnEl.style.display = 'none';
+        const backBtnEl = document.getElementById('online-back-btn');
+        if (backBtnEl) backBtnEl.style.display = 'none';
+
+        // 第一階段記分：只計登入玩家的 VS AI 戰績（PVE 時玩家 1 是人類、玩家 2 是電腦）。
+        // 2P 本地對戰不計分；平手不計分；未登入時 recordResult 內部會直接略過。
+        if (gameMode === 'PVE' && window.WD && typeof window.WD.recordResult === 'function') {
+            if (winnerText === 'PLAYER 1 獲勝') {
+                window.WD.recordResult(true);
+            } else if (winnerText === 'PLAYER 2 獲勝') {
+                window.WD.recordResult(false);
+            }
         }
     }
 
@@ -1022,6 +1072,11 @@ function showGameOver(winnerText) {
 function generateWind() {
     // 風速介於 -5 (強左風) 到 +5 (強右風)
     wind = parseFloat((Math.random() * 10 - 5).toFixed(1));
+    renderWind();
+}
+
+// 依目前 wind 更新風向 UI（線上模式套用房間風向時也用）
+function renderWind() {
     const arrowEl = document.getElementById('wind-arrow');
     const valueEl = document.getElementById('wind-value');
 
@@ -1082,12 +1137,29 @@ function updateHUD() {
         document.querySelector('.p1-panel').classList.remove('active');
         document.getElementById('fuel-value').innerText = Math.round(player2.fuel);
     }
+
+    // 線上模式：顯示玩家名字與「輪到你／等待對方」
+    if (gameMode === 'ONLINE' && window.WDOnline && typeof window.WDOnline.getOnlineNames === 'function') {
+        const onlineNames = window.WDOnline.getOnlineNames();
+        const onlineP1Name = document.querySelector('.p1-panel .player-name');
+        const onlineP2Name = document.querySelector('.p2-panel .player-name');
+        if (onlineP1Name && onlineNames.p1) onlineP1Name.innerText = onlineNames.p1 + ' [左方]';
+        if (onlineP2Name && onlineNames.p2) onlineP2Name.innerText = onlineNames.p2 + ' [右方]';
+        const onlineTurnEl = document.getElementById('turn-indicator');
+        if (onlineTurnEl && typeof window.WDOnline.isMyTurn === 'function') {
+            const onlineMyTurn = window.WDOnline.isMyTurn();
+            onlineTurnEl.innerText = onlineMyTurn ? '輪到你了' : '等待對方開砲…';
+            onlineTurnEl.className = 'turn-announcement ' + (currentPlayer === 1 ? 'p1-turn' : 'p2-turn');
+        }
+    }
 }
 
 // --- 繪製引擎 ---
 function gameLoop() {
     updatePhysics();
     updateCharging();
+    // 線上模式：推進對方開火的重播動畫
+    if (window.WDOnline && typeof window.WDOnline.tickReplay === 'function') window.WDOnline.tickReplay();
     render();
     requestAnimationFrame(gameLoop);
 }
@@ -1125,6 +1197,9 @@ function render() {
     if (gameState === STATES.FLYING && projectile) {
         drawProjectile();
     }
+
+    // 6b. 線上模式：繪製對方開火的重播砲彈
+    if (window.WDOnline && typeof window.WDOnline.drawReplay === 'function') window.WDOnline.drawReplay();
 
     // 7. 繪製爆炸波
     drawExplosions();
@@ -1755,38 +1830,52 @@ function runAITurn() {
 }
 
 // --- 自動瞄準 (Auto-Aim) 外掛功能 ---
+// PVE／2P 時只有玩家 1 能用（原本行為）；線上模式輪到誰、誰就能用（p2 也能用）。
 function triggerAutoAim() {
-    if (gameState !== STATES.PLAYING || currentPlayer !== 1 || isAutoAiming) return;
+    if (gameState !== STATES.PLAYING || isAutoAiming) return;
+    if (gameMode === 'ONLINE') {
+        if (!window.WDOnline || typeof window.WDOnline.isMyTurn !== 'function' || !window.WDOnline.isMyTurn()) return;
+    } else if (currentPlayer !== 1) {
+        return;
+    }
 
     isAutoAiming = true; // 鎖定狀態，防止二次觸發與重疊輸入
 
-    let targetX = player2.x;
-    let targetY = player2.y;
+    const shooter = currentPlayer === 1 ? player1 : player2;
+    const target = currentPlayer === 1 ? player2 : player1;
+    // 射擊方向：目標在右邊為 +1（角度往 -45 靠），在左邊為 -1（角度往 -135 靠）
+    const dirSign = target.x > shooter.x ? 1 : -1;
 
-    // 如果使用大砲彈 (selectedWeapon === 2)，目標設在對手大砲旁邊 (往左偏移 24px，即獨木橋內側)
-    if (player1.selectedWeapon === 2) {
-        targetX = player2.x - 24;
+    let targetX = target.x;
+    let targetY = target.y;
+
+    // 如果使用大砲彈 (selectedWeapon === 2)，目標設在對手大砲旁邊（往橋內側偏移 24px）
+    if (shooter.selectedWeapon === 2) {
+        targetX = target.x - dirSign * 24;
         const mapX = Math.max(0, Math.min(CANVAS_WIDTH - 1, Math.round(targetX)));
         targetY = bridgeHeightMap[mapX] - 15;
-        createDamageText(player1.x, player1.y - 45, "戰術挖地瞄準！", COLORS.yellow);
+        createDamageText(shooter.x, shooter.y - 45, "戰術挖地瞄準！", COLORS.yellow);
     } else {
-        createDamageText(player1.x, player1.y - 45, "精準打擊瞄準！", COLORS.cyan);
+        createDamageText(shooter.x, shooter.y - 45, "精準打擊瞄準！", COLORS.cyan);
     }
 
     autoAimTarget = { x: targetX, y: targetY };
 
-    const dx = targetX - player1.x;
-    const dy = targetY - player1.y;
+    const dx = targetX - shooter.x;
+    const dy = targetY - shooter.y;
     const ax = wind * WIND_FACTOR;
     const ay = GRAVITY;
 
-    let bestAngle = player1.angle;
+    let bestAngle = shooter.angle;
     let bestPower = 50;
     let found = false;
     let minDiff = Infinity;
 
-    // 搜尋最接近 -45 度的完美彈道角度與對應的力道
-    for (let testAngle = -80; testAngle <= -10; testAngle += 0.5) {
+    // 搜尋最接近理想角度的完美彈道與對應力道（右邊：-80~-10 偏好 -45；左邊：-170~-100 偏好 -135）
+    const angleMin = dirSign > 0 ? -80 : -170;
+    const angleMax = dirSign > 0 ? -10 : -100;
+    const preferAngle = dirSign > 0 ? -45 : -135;
+    for (let testAngle = angleMin; testAngle <= angleMax; testAngle += 0.5) {
         const angleRad = testAngle * Math.PI / 180;
         const tanTh = Math.tan(angleRad);
         const num = dy - dx * tanTh;
@@ -1796,11 +1885,11 @@ function triggerAutoAim() {
             const t = Math.sqrt(t2);
             const vx = (dx - 0.5 * ax * t2) / t;
             const vy = (dy - 0.5 * ay * t2) / t;
-            if (vx > 0) {
+            if (vx * dirSign > 0) {
                 const vel = Math.sqrt(vx * vx + vy * vy);
                 const power = ((vel - MIN_POWER) / (MAX_POWER - MIN_POWER)) * 100;
                 if (power >= 20 && power <= 100) {
-                    const anglePrefDiff = Math.abs(testAngle - (-45));
+                    const anglePrefDiff = Math.abs(testAngle - preferAngle);
                     if (anglePrefDiff < minDiff) {
                         minDiff = anglePrefDiff;
                         bestAngle = testAngle;
@@ -1815,7 +1904,11 @@ function triggerAutoAim() {
     if (!found) {
         // 回退算法
         const angleToPlayer = Math.atan2(dy, dx) * 180 / Math.PI;
-        bestAngle = Math.max(-85, Math.min(-15, angleToPlayer - 15));
+        if (dirSign > 0) {
+            bestAngle = Math.max(-85, Math.min(-15, angleToPlayer - 15));
+        } else {
+            bestAngle = Math.max(-165, Math.min(-95, angleToPlayer + 15));
+        }
         const angleRad = bestAngle * Math.PI / 180;
         const dist = Math.abs(dx);
         const sin2 = Math.sin(2 * Math.abs(angleRad)) || 0.5;
@@ -1827,20 +1920,20 @@ function triggerAutoAim() {
     gameState = STATES.CHARGING;
 
     // 砲管旋轉動畫
-    let angleDiff = bestAngle - player1.angle;
+    let angleDiff = bestAngle - shooter.angle;
     const steps = Math.abs(Math.round(angleDiff / 1.5));
     const rotateDir = angleDiff > 0 ? 1 : -1;
 
     let rotateStep = 0;
     function autoRotateStep() {
         if (rotateStep < steps) {
-            player1.rotate(rotateDir);
+            shooter.rotate(rotateDir);
             rotateStep++;
             setTimeout(autoRotateStep, 30);
         } else {
-            player1.angle = bestAngle;
-            const displayAngle = Math.round(Math.abs(player1.angle));
-            const angleEl = document.getElementById('p1-angle');
+            shooter.angle = bestAngle;
+            const displayAngle = Math.round(Math.abs(shooter.angle));
+            const angleEl = document.getElementById(`p${shooter.id}-angle`);
             if (angleEl) angleEl.innerText = displayAngle;
             autoFire();
         }

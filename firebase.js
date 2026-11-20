@@ -15,6 +15,9 @@ import {
   getFirestore,
   doc,
   setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
   increment,
   serverTimestamp,
   collection,
@@ -22,6 +25,8 @@ import {
   orderBy,
   limit,
   getDocs,
+  onSnapshot,
+  runTransaction,
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -162,6 +167,174 @@ async function loadLeaderboard() {
   }
 }
 
+// --- 線上對戰房間（第二階段）：Firestore 即時同步 ---
+// Collection「rooms」，文件 id 是 6 碼房間代碼；status: waiting / playing / finished。
+// 規則是所有人可讀、登入者可寫（已在 Firebase Console 發佈），所以以下寫入都需要登入。
+// 同步模型：開火方在本機模擬整發流程，結束後寫入「權威結果狀態」＋開火參數（lastShot）；
+// 對方用同樣的開火參數播放重播動畫，再套用權威結果（不各自算傷害，避免算出不同結果）。
+
+const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 不含 0/O/1/I，避免唸錯
+
+function generateRoomCode() {
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+function roomPlayerInfo(user) {
+  return {
+    uid: user.uid,
+    displayName: user.displayName || "玩家",
+    photoURL: user.photoURL || "",
+    lastSeen: serverTimestamp(),
+  };
+}
+
+// 新一局的初始狀態（雙方固定位置、HP 100、隨機風向、p1 先攻）
+function initialRoomState() {
+  return {
+    turn: "p1",
+    round: 1,
+    wind: parseFloat((Math.random() * 10 - 5).toFixed(1)),
+    p1: { x: 260, y: 335, hp: 100, angle: -45, fuel: 100, weapon: 1, doubleUses: 2, useDouble: false, isFalling: false },
+    p2: { x: 764, y: 335, hp: 100, angle: -135, fuel: 100, weapon: 1, doubleUses: 2, useDouble: false, isFalling: false },
+    holes: [],
+  };
+}
+
+async function createRoom() {
+  if (!currentUser) throw new Error("NEED_LOGIN");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateRoomCode();
+    const ref = doc(db, "rooms", code);
+    const snap = await getDoc(ref);
+    if (snap.exists()) continue; // 代碼撞了就換一個
+    await setDoc(ref, {
+      code,
+      status: "waiting",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      rev: 1,
+      players: { p1: roomPlayerInfo(currentUser), p2: null },
+      state: initialRoomState(),
+      lastShot: null,
+      winner: null,
+      leftBy: null,
+    });
+    return code;
+  }
+  throw new Error("CODE_RETRY");
+}
+
+async function joinRoom(code) {
+  if (!currentUser) throw new Error("NEED_LOGIN");
+  code = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 6) throw new Error("BAD_CODE");
+  const ref = doc(db, "rooms", code);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("ROOM_NOT_FOUND");
+    const data = snap.data();
+    if (data.status === "finished") throw new Error("ROOM_FINISHED");
+    if ((data.players && data.players.p2) || data.status !== "waiting") throw new Error("ROOM_FULL");
+    tx.update(ref, {
+      players: { p1: data.players.p1, p2: roomPlayerInfo(currentUser) },
+      status: "playing",
+      rev: (data.rev || 0) + 1,
+      updatedAt: serverTimestamp(),
+    });
+  });
+  return code;
+}
+
+// 重新加入自己已經在裡面的房間（例如重整頁面後回來）：不佔新位置，只清掉自己的離開標記
+async function rejoinRoom(code) {
+  if (!currentUser) throw new Error("NEED_LOGIN");
+  code = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const ref = doc(db, "rooms", code);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("ROOM_NOT_FOUND");
+  const data = snap.data();
+  let slot = null;
+  if (data.players && data.players.p1 && data.players.p1.uid === currentUser.uid) slot = "p1";
+  else if (data.players && data.players.p2 && data.players.p2.uid === currentUser.uid) slot = "p2";
+  if (!slot) throw new Error("NOT_IN_ROOM");
+  const patch = { updatedAt: serverTimestamp() };
+  if (data.leftBy === slot) patch.leftBy = null;
+  await updateDoc(ref, patch);
+  return slot;
+}
+
+// 即時監聽房間文件；文件被刪除時回傳 null
+function subscribeRoom(code, onUpdate) {
+  const ref = doc(db, "rooms", code);
+  return onSnapshot(
+    ref,
+    (snap) => { onUpdate(snap.exists() ? snap.data() : null); },
+    (err) => { console.error("[WD] 房間監聽失敗", err); }
+  );
+}
+
+// 開火參數（對方收到後播放重播動畫）
+async function sendShot(code, shot) {
+  const ref = doc(db, "rooms", code);
+  await updateDoc(ref, {
+    lastShot: Object.assign({}, shot, { at: serverTimestamp() }),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// 回合結束後的權威結果狀態（rev 由呼叫方遞增）
+async function sendState(code, state, rev) {
+  const ref = doc(db, "rooms", code);
+  await updateDoc(ref, { state, rev, updatedAt: serverTimestamp() });
+}
+
+// 終局（winner: 'p1' / 'p2' / 'draw'）
+async function finishRoom(code, winner, state, rev) {
+  const ref = doc(db, "rooms", code);
+  await updateDoc(ref, { status: "finished", winner, state, rev, updatedAt: serverTimestamp() });
+}
+
+// 再來一場：重置成新一局（雙方都要在房間裡才有效，由呼叫方確認）
+async function rematchRoom(code, state, rev) {
+  const ref = doc(db, "rooms", code);
+  await updateDoc(ref, { status: "playing", winner: null, lastShot: null, leftBy: null, state, rev, updatedAt: serverTimestamp() });
+}
+
+// 離開房間：對方已經離開（或等待中根本沒人加入）→ 房間直接刪除，否則只標記我離開
+async function leaveRoom(code, slot) {
+  const ref = doc(db, "rooms", code);
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const other = slot === "p1" ? "p2" : "p1";
+    if (data.leftBy === other || (slot === "p1" && !data.players.p2)) {
+      await deleteDoc(ref);
+      return;
+    }
+    await updateDoc(ref, { leftBy: slot, updatedAt: serverTimestamp() });
+  } catch (err) {
+    console.error("[WD] 離開房間寫入失敗", err);
+  }
+}
+
+// 心跳：讓對方知道我還在（關掉頁面就停了，對方 60 秒沒收到就視為離開）
+async function heartbeatRoom(code, slot) {
+  if (!code || !slot) return;
+  try {
+    const ref = doc(db, "rooms", code);
+    const patch = { updatedAt: serverTimestamp() };
+    patch["players." + slot + ".lastSeen"] = serverTimestamp();
+    await updateDoc(ref, patch);
+  } catch (err) {
+    // 心跳失敗不影響遊戲（對方頂多晚一點才知道我離開）
+  }
+}
+
 // --- 綁定按鈕與監聽登入狀態（onAuthStateChanged 載入時就會觸發一次） ---
 const loginBtn = $("google-login-btn");
 if (loginBtn) loginBtn.addEventListener("click", loginWithGoogle);
@@ -181,4 +354,17 @@ window.WD = {
   recordResult,
   loadLeaderboard,
   getCurrentUser: () => currentUser,
+  // 線上對戰房間（第二階段）
+  generateRoomCode,
+  initialRoomState,
+  createRoom,
+  joinRoom,
+  rejoinRoom,
+  subscribeRoom,
+  sendShot,
+  sendState,
+  finishRoom,
+  rematchRoom,
+  leaveRoom,
+  heartbeatRoom,
 };
