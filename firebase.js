@@ -432,13 +432,15 @@ async function sendInvite(toUid, roomCode) {
   return ref.id;
 }
 
-// 監聽寄給我的待回覆邀請（toUid 是我、status 是 pending），用 docChanges 回傳變化
+// 監聽寄給我的邀請：只用 toUid 一個條件（status 在 presence.js 裡過濾，
+// 原因：多欄位 where 要複合索引，單一條件最穩；
+// 另外收邀請的卡片已改成全域浮層，不再只在開始畫面顯示）
 function subscribeInvitesToMe(uid, onUpdate) {
   const q = query(
     collection(db, "invites"),
-    where("toUid", "==", uid),
-    where("status", "==", "pending")
+    where("toUid", "==", uid)
   );
+  console.log("[WD] 邀請監聽已建立，uid =", uid);
   return onSnapshot(q, (snap) => {
     const changes = snap.docChanges().map((c) => ({ type: c.type, id: c.doc.id, data: c.doc.data() || {} }));
     onUpdate(changes);
@@ -486,10 +488,21 @@ onAuthStateChanged(auth, (user) => {
   currentUser = user;
   renderAuthArea();
   loadLeaderboard(); // 登入狀態改變後刷新排行榜（自己的那一行會標示出來）
-  // 通知 presence.js（線上玩家列表＋邀請）：登入就上線、登出就下線
-  if (typeof window !== "undefined" && window.WDPresence && typeof window.WDPresence.onAuthChanged === "function") {
-    window.WDPresence.onAuthChanged(user);
-  }
+  // 通知 presence.js（線上玩家列表＋邀請）：登入就上線、登出就下線。
+  // presence.js 是一般 script、firebase.js 是 module，正常載入順序下
+  // presence.js 一定先跑、window.WDPresence 一定已定義；這裡仍加有限重試，
+  // 萬一 auth 回呼跑在 presence.js 之前，訂閱也不會漏掉（最多重試 5 次）。
+  let tries = 0;
+  (function notifyPresence() {
+    if (typeof window !== "undefined" && window.WDPresence && typeof window.WDPresence.onAuthChanged === "function") {
+      window.WDPresence.onAuthChanged(user);
+    } else if (tries < 5) {
+      tries++;
+      setTimeout(notifyPresence, 500);
+    } else {
+      console.error("[WD] WDPresence 未載入，線上玩家／邀請未訂閱");
+    }
+  })();
 });
 
 // 暴露給 game.js（傳統 script）呼叫的介面

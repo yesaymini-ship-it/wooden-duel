@@ -281,14 +281,19 @@ async function presenceCancelOutgoing() {
 
 // ---------- 邀請：收到 ----------
 // 監聽寄給我的待回覆邀請（docChanges：added / modified / removed）
+// 注意：firebase.js 的訂閱只用 toUid 一個條件，status 在這裡過濾，
+// 所以非 pending 的變化（接受／拒絕／取消／過期）也會送進來，要自己擋掉。
 function presenceOnInviteChanges(changes) {
+  console.log("[WDPresence] 收到邀請變化：", (changes || []).length, "筆");
   (changes || []).forEach(function (ch) {
     if (ch.type === "removed") {
       presenceRemoveIncoming(ch.id);
     } else if (ch.type === "added" || ch.type === "modified") {
       const data = ch.data || {};
-      if (data.status === "pending") presenceAddIncoming(ch.id, data);
-      else presenceRemoveIncoming(ch.id);
+      if (data.status === "pending") {
+        console.log("[WDPresence] 收到待回覆邀請：", ch.id, "來自", data.fromName || "玩家");
+        presenceAddIncoming(ch.id, data);
+      } else presenceRemoveIncoming(ch.id);
     }
   });
   presenceRenderIncoming();
@@ -372,7 +377,7 @@ async function presenceDeclineInvite(id) {
   }
 }
 
-// 收到的邀請卡片（開始畫面上方，一筆邀請一張卡片）
+// 收到的邀請卡片（全域浮層，任何畫面都看得到，一筆邀請一張卡片）
 function presenceRenderIncoming() {
   const box = presenceEl("online-invite-cards");
   if (!box) return;
@@ -382,6 +387,7 @@ function presenceRenderIncoming() {
     box.style.display = "none";
     return;
   }
+  console.log("[WDPresence] 顯示邀請卡片：", ids.length, "張");
   box.style.display = "block";
   ids.forEach(function (id) {
     const inv = presenceIncoming[id];
@@ -443,6 +449,7 @@ function presenceOnAuthChanged(user) {
     presenceUnsubscribe = WD.subscribePresence(presenceOnPresenceSnapshot);
   }
   if (WD && typeof WD.subscribeInvitesToMe === "function") {
+    console.log("[WDPresence] 訂閱收到的邀請，uid =", user.uid);
     presenceInvitesUnsubscribe = WD.subscribeInvitesToMe(user.uid, presenceOnInviteChanges);
   }
   presenceRenderList();

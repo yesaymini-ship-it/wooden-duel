@@ -856,11 +856,15 @@ kbd {
     box-shadow: 0 5px 0px #2a1608, 0 8px 15px rgba(0,0,0,0.5);
 }
 
-/* 收到的邀請卡片（開始畫面上方） */
+/* 收到的邀請卡片（全域浮層：固定在畫面上方、蓋過所有畫面，任何畫面都看得到） */
 .invite-cards {
-    width: 90%;
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(92vw, 520px);
     max-width: 520px;
-    margin-bottom: 1.5rem;
+    z-index: 100;
 }
 
 .invite-card {

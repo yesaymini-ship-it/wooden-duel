@@ -12,15 +12,16 @@
 <body>
     <div class="cyber-grid"></div>
 
+    <!-- 收到的對戰邀請（全域浮層：不管在哪個畫面，收到邀請都要看得到；
+         以前放在 #start-screen 裡面，正在玩 VS AI 或結算畫面時會被 opacity: 0 蓋掉） -->
+    <div id="online-invite-cards" class="invite-cards" style="display: none;"></div>
+
     <!-- 遊戲選單 / 開始畫面 -->
     <div id="start-screen" class="screen active">
         <div class="wood-title-container">
             <h1 class="wood-text">WOODEN DUEL</h1>
             <p class="subtitle">獨木橋上的大砲對決 // RUSTIC ARTILLERY ARENA</p>
         </div>
-
-        <!-- 收到的對戰邀請（有人邀請你時跳出卡片） -->
-        <div id="online-invite-cards" class="invite-cards" style="display: none;"></div>
 
         <div class="card panel">
             <h3>遊戲玩法說明</h3>
