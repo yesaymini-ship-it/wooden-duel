@@ -615,21 +615,24 @@ function handleKeyDown(e) {
     if (e.key === '2') selectWeapon(2);
     if (e.key === '3') selectWeapon(3);
 
+    // 移動／角度（A／D／W／S）：先過 canAcceptInput() 把關，
+    // 線上模式輪到對方或重播時不設定 keys（觸控按鈕本來就是這樣擋的），
+    // 避免按鍵在對方回合被「記住」，等回合回來才突然動起來。
     if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
         e.preventDefault();
-        keys.a = true;
+        if (canAcceptInput()) keys.a = true;
     }
     if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
         e.preventDefault();
-        keys.d = true;
+        if (canAcceptInput()) keys.d = true;
     }
     if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
         e.preventDefault();
-        keys.w = true;
+        if (canAcceptInput()) keys.w = true;
     }
     if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
         e.preventDefault();
-        keys.s = true;
+        if (canAcceptInput()) keys.s = true;
     }
     
     if (e.code === 'Space') {
@@ -811,8 +814,12 @@ function updatePhysics() {
     });
 
     // 2. 大砲控制更新 (僅限當前玩家回合，墜落中無法控制)
+    // canAcceptInput() 把關：線上模式只有輪到自己且非重播時才能操作，
+    // 擋住鍵盤／觸控在對方回合的輸入，也擋住按住方向鍵不放跨過換回合的情況。
+    // （2P 本地對戰與 VS AI 自己回合不受影響：canAcceptInput 在那兩種模式下
+    //  本來就允許操作；VS AI 電腦回合本來就被擋，AI 自己用 player2.move() 移動，不走 keys。）
     const activePlayer = currentPlayer === 1 ? player1 : player2;
-    if ((gameState === STATES.PLAYING || gameState === STATES.CHARGING) && !activePlayer.isFalling) {
+    if ((gameState === STATES.PLAYING || gameState === STATES.CHARGING) && !activePlayer.isFalling && canAcceptInput()) {
         if (keys.a) activePlayer.move(-1);
         if (keys.d) activePlayer.move(1);
         if (keys.w) activePlayer.rotate(-1);
