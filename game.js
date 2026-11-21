@@ -1882,7 +1882,9 @@ function runAITurn() {
             } else {
                 // 回退算法
                 const dist = Math.abs(dx);
-                const sin2 = Math.sin(2 * Math.abs(angleRad)) || 0.5;
+                // 左向射擊時 2*|角度| 落在 190°~350°，sin 為負數；取絕對值才是物理正確的
+                // 拋物線公式（與右向的鏡像），否則 sqrt(負數)=NaN 會讓蓄力永遠等不到開火。
+                const sin2 = Math.abs(Math.sin(2 * Math.abs(angleRad))) || 0.5;
                 requiredVel = Math.sqrt((dist * ay) / sin2) + wind * WIND_FACTOR * 12;
             }
             
@@ -1890,7 +1892,9 @@ function runAITurn() {
             let idealPower = ((requiredVel - MIN_POWER) / (MAX_POWER - MIN_POWER)) * 100;
             
             // 聰明電腦：移除發射隨機误差，達到 100% 神射手精準度
-            const targetPower = Math.max(20, Math.min(100, idealPower));
+            let targetPower = Math.max(20, Math.min(100, idealPower));
+            // 安全網：若算出 NaN（例如風向／角度極端組合），用 50% 開火，絕不卡在蓄力。
+            if (!Number.isFinite(targetPower)) targetPower = 50;
             
             // 開始蓄力動畫
             gameState = STATES.CHARGING;
@@ -2001,9 +2005,12 @@ function triggerAutoAim() {
         }
         const angleRad = bestAngle * Math.PI / 180;
         const dist = Math.abs(dx);
-        const sin2 = Math.sin(2 * Math.abs(angleRad)) || 0.5;
+        // 左向射擊時 sin(2*|角度|) 為負數，取絕對值（與 aiFire 相同原因，否則 bestPower=NaN 會卡在蓄力）
+        const sin2 = Math.abs(Math.sin(2 * Math.abs(angleRad))) || 0.5;
         const vel = Math.sqrt((dist * ay) / sin2) + wind * WIND_FACTOR * 12;
         bestPower = Math.max(20, Math.min(100, ((vel - MIN_POWER) / (MAX_POWER - MIN_POWER)) * 100));
+        // 安全網：若算出 NaN，用 50% 開火，絕不卡在蓄力。
+        if (!Number.isFinite(bestPower)) bestPower = 50;
     }
 
     // 暫時將狀態改為 CHARGING 防止玩家在動畫期間手動輸入
