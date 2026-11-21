@@ -1082,4 +1082,11 @@ kbd {
     .howto-item-title {
         flex-basis: 6.5em;
     }
+
+    /* 大標題在窄螢幕不溢出：字體隨視窗寬度縮放、字距縮小。
+       桌機（>480px）維持 4.5rem／6px 不變。 */
+    h1.wood-text {
+        font-size: clamp(1.9rem, 9vw, 2.75rem);
+        letter-spacing: 2px;
+    }
 }
