@@ -32,6 +32,7 @@ body {
     font-family: 'Montserrat', sans-serif;
     font-size: 18px;
     height: 100vh;
+    height: 100dvh; /* 行動瀏覽器用動態視窗高度，避免網址列／工具列把畫面底部遮住 */
     overflow: hidden;
     display: flex;
     justify-content: center;
@@ -1088,5 +1089,100 @@ kbd {
     h1.wood-text {
         font-size: clamp(1.9rem, 9vw, 2.75rem);
         letter-spacing: 2px;
+    }
+}
+
+/* --- 矮視窗（手機橫擺約 375~430px 高）：整組壓縮，讓畫布完整顯示 ---
+   根因：手機橫擺時視窗高只剩約 390px，但畫布只按寬度縮放（844px 寬 → 448px 高），
+   加上 HUD（觸控版改為 in-flow 約 134px）、下方控制列與留言列，內容總高約 790px，
+   畫布頂部只露出一半天空、大砲與橋面都在可視範圍外，才會「看不到遊戲畫面」。
+   修法：HUD 改回絕對定位疊在畫布上方（跟桌機一樣，不佔垂直空間），畫布同時受
+   寬與高限制（max-height 扣掉下方控制列預留 185px），觸控按鈕與下方列同步縮小；
+   旋轉手機時 media query 自動重算，不需 JS。直擺（高 844px）與桌機（高 800px）
+   不符合 max-height: 500px，完全不受影響。 */
+@media (max-height: 500px) {
+    #game-screen {
+        justify-content: flex-start;
+        overflow-y: auto;
+        padding: 0.5rem 1rem;
+    }
+
+    /* HUD 疊在畫布上方，不佔用垂直空間；畫布上方是天空，蓋住不影響遊戲 */
+    .hud-top {
+        position: absolute;
+        top: 0.25rem;
+        left: 50%;
+        transform: translateX(-50%);
+        margin-bottom: 0;
+    }
+
+    .player-panel {
+        width: 200px;
+        padding: 0.5rem;
+    }
+
+    .player-name {
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .hp-bar-container {
+        height: 10px;
+        margin-bottom: 0.25rem;
+    }
+
+    .player-stats {
+        font-size: 0.8rem;
+    }
+
+    .weapon-display {
+        margin-top: 0.25rem;
+        font-size: 0.85rem;
+    }
+
+    .turn-announcement {
+        font-size: 1.1rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .wind-indicator {
+        padding: 4px 10px;
+        font-size: 0.8rem;
+    }
+
+    /* 畫布同時受寬與高限制：16:9 比例不變，高度不超過可視高度扣掉下方控制列
+       （預留 195px = 畫面內距 16 + 畫布邊框 10 + 下方列 47 + 觸控按鈕 64 + 留言列 54 + 4px 餘裕；
+       沒有留言列的單人模式會多一點餘裕，仍可捲動到達） */
+    #gameCanvas {
+        max-width: 100%;
+        max-height: calc(100vh - 195px);
+        max-height: calc(100dvh - 195px);
+    }
+
+    /* 蓄力條配合小畫布縮窄，避免超出畫布 */
+    .power-bar-wrapper {
+        width: 260px;
+        bottom: 10px;
+        padding: 8px 12px;
+    }
+
+    .hud-bottom {
+        margin-top: 0.5rem;
+    }
+
+    .touch-controls {
+        margin-top: 0.5rem;
+    }
+
+    .touch-btn {
+        min-width: 48px;
+        min-height: 48px;
+        font-size: 1.2rem;
+    }
+
+    .touch-fire {
+        min-width: 88px;
+        min-height: 56px;
+        font-size: 1.2rem;
     }
 }
